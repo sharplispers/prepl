@@ -603,6 +603,11 @@
 						',docstring
 						',parsing)))))))
 
+(define-repl-command (load-op :aliases ("make" "load-system")) (name)
+  "Load the specified ASDF system"
+  (asdf:operate 'asdf:load-op name)
+  (prin1 (asdf:find-system name)))
+
 (let ((cmd-table
        '(("aliases" 3 alias-cmd "show aliases")
          ("apropos" 2 apropos-cmd "show apropos" :parsing :string)
