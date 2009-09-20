@@ -38,9 +38,6 @@
 (defparameter *cmd-number* 1
   "Number of the next command")
 
-(defvar *input*)
-(defvar *output*)
-
 (declaim (type list *history*))
 
 (defvar *eof-marker* :eof)
@@ -544,7 +541,7 @@
   (sb-debug::print-frame-call sb-debug::*current-frame*))
 
 (defun zoom-cmd ()
-  )
+  (trivial-backtrace:print-backtrace *current-error*))
 
 (defun local-cmd (&optional var)
   (declare (ignore var))
