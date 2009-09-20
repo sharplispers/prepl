@@ -5,7 +5,6 @@
   (:export "REPL"
 
 	   "DEFINE-REPL-COMMAND"
-	   "ALIAS"
 
 	   "*PROMPT*"
 	   "*EXIT-ON-EOF*"

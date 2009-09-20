@@ -1,15 +1,15 @@
 (cl:in-package :prepl)
 
-(defstruct user-cmd
+(defstruct user-command
   (input nil) ; input, maybe a string or form
   (func nil)  ; cmd func entered, overloaded
-              ; (:eof :null-cmd :cmd-error :history-error)
+              ; (:eof :null-command :cmd-error :history-error)
   (args nil)  ; args for cmd func
   (hnum nil)) ; history number
 
 
 ;;; cmd table entry
-(defstruct cmd-table-entry
+(defstruct command-table-entry
   (name nil) ; name of command
   (func nil) ; function handler
   (desc nil) ; short description
@@ -41,8 +41,30 @@
 (declaim (type list *history*))
 
 (defvar *eof-marker* :eof)
-(defvar *eof-cmd* (make-user-cmd :func :eof))
-(defvar *null-cmd* (make-user-cmd :func :null-cmd))
+(defvar *eof-command* (make-user-command :func :eof))
+(defvar *null-command* (make-user-command :func :null-command))
+
+(defmacro define-repl-command
+    (name-and-options (&rest args) &body docstring-and-forms)
+  (destructuring-bind (name &key parsing abbr-len aliases)
+      (if (listp name-and-options) name-and-options (list name-and-options))
+    (let ((docstring (when (stringp (car docstring-and-forms))
+		       (car docstring-and-forms)))
+	  (cmd-name (intern (format nil "~A-CMD" (symbol-name name))
+			    :prepl))
+	  (name (string-downcase name)))
+      `(progn
+	 (defun ,cmd-name (,@args)
+	   ,@docstring-and-forms)
+	 ,@(iter (for alias in (cons name aliases))
+		 (collect `(add-command-table-entry
+			    ',alias
+			    ',abbr-len
+			    ',cmd-name
+			    ',(if (eq alias name)
+				  docstring
+				  (format nil "Alias for ~A" name))
+			    ',parsing)))))))
 
 (defparameter *cmd-table-hash*
   (make-hash-table :size 30 :test #'equal))
@@ -55,25 +77,25 @@
                  (lambda (a b) (< (length a) (length b)))))
       (package-name cl:*package*)))
 
-(defun read-cmd (input-stream)
-  ;; Reads a command from the user and returns a user-cmd object
+(defun read-command (input-stream)
+  ;; Reads a command from the user and returns a user-command object
   (let* ((next-char (peek-char-non-whitespace input-stream))
          (cmd (cond
                 ((eql *command-char* next-char)
                  (dispatch-command-line input-stream))
                 ((eql #\newline next-char)
                  (read-char input-stream)
-                 *null-cmd*)
+                 *null-command*)
                 ((eql :eof next-char)
-                 *eof-cmd*)
+                 *eof-command*)
                 (t
                  (let* ((eof (cons nil *eof-marker*))
                         (form (read input-stream nil eof)))
                    (if (eq form eof)
-                       *eof-cmd*
-                       (make-user-cmd :input form :func nil :hnum *cmd-number*)))))))
+                       *eof-command*
+                       (make-user-command :input form :func nil :hnum *cmd-number*)))))))
     (skip-remaining-whitespace input-stream)
-    (if (and (eq cmd *eof-cmd*) (typep input-stream 'string-stream))
+    (if (and (eq cmd *eof-command*) (typep input-stream 'string-stream))
         (throw 'repl-catcher cmd)
         cmd)))
 
@@ -90,17 +112,17 @@
     (cond
       ((or (zerop (length cmd-string))
            (whitespace-char-p (char cmd-string 0)))
-       *null-cmd*)
+       *null-command*)
       ((or (numberp (read-from-string cmd-string))
            (char= (char cmd-string 0) #\+)
            (char= (char cmd-string 0) #\-))
-       (process-cmd-numeric cmd-string cmd-args-string))
+       (process-command-numeric cmd-string cmd-args-string))
       ((char= (char cmd-string 0) *command-char*)
        (process-history-search (subseq cmd-string 1) cmd-args-string))
       (t
-       (process-cmd-text cmd-string line cmd-args-string)))))
+       (process-command-text cmd-string line cmd-args-string)))))
 
-(defun process-cmd-numeric (cmd-string cmd-args-string)
+(defun process-command-numeric (cmd-string cmd-args-string)
   "Process a numeric cmd, such as ':123'"
   (let* ((first-char (char cmd-string 0))
          (number-string (if (digit-char-p first-char)
@@ -112,14 +134,14 @@
                      (- *cmd-number* raw-number)
                      raw-number))
          (cmd (get-history number)))
-    (when (eq cmd *null-cmd*)
-      (return-from process-cmd-numeric
-        (make-user-cmd :func :history-error :input (read-from-string
+    (when (eq cmd *null-command*)
+      (return-from process-command-numeric
+        (make-user-command :func :history-error :input (read-from-string
                                                     cmd-string))))
-    (maybe-return-history-cmd cmd cmd-args-string)))
+    (maybe-return-history-command cmd cmd-args-string)))
 
-(defun maybe-return-history-cmd (cmd cmd-args-string)
-  (format *output* "~A~%" (user-cmd-input cmd))
+(defun maybe-return-history-command (cmd cmd-args-string)
+  (format *output* "~A~%" (user-command-input cmd))
   (let ((dont-redo
          (when (and (stringp cmd-args-string)
                     (plusp (length cmd-args-string))
@@ -135,17 +157,17 @@
              (format *output* "redo? [y] ")
              (force-output *output*)))))
     (if dont-redo
-        *null-cmd*
-        (make-user-cmd :func (user-cmd-func cmd)
-                       :input (user-cmd-input cmd)
-                       :args (user-cmd-args cmd)
+        *null-command*
+        (make-user-command :func (user-command-func cmd)
+                       :input (user-command-input cmd)
+                       :args (user-command-args cmd)
                        :hnum *cmd-number*))))
 
 
 (defun find-history-matching-pattern (cmd-string)
   "Return history item matching cmd-string or NIL if not found"
   (dolist (his *history* nil)
-    (let* ((input (user-cmd-input his))
+    (let* ((input (user-command-input his))
            (string-input (if (stringp input)
                              input
                              (write-to-string input))))
@@ -156,11 +178,11 @@
   (let ((cmd (find-history-matching-pattern pattern)))
     (unless cmd
       (format *output* "No match on history list with pattern ~S~%" pattern)
-      (return-from process-history-search *null-cmd*))
-    (maybe-return-history-cmd cmd cmd-args-string)))
+      (return-from process-history-search *null-command*))
+    (maybe-return-history-command cmd cmd-args-string)))
 
 
-(defun process-cmd-text (cmd-string line cmd-args-string)
+(defun process-command-text (cmd-string line cmd-args-string)
   "Process a text cmd, such as ':ld a b c'"
   (flet ((parse-args (parsing args-string)
            (case parsing
@@ -174,13 +196,13 @@
                 (loop as arg = (read string-stream nil eof)
                       until (eq arg eof)
                       collect arg))))))
-    (let ((cmd-entry (find-cmd cmd-string)))
+    (let ((cmd-entry (find-command cmd-string)))
       (unless cmd-entry
-        (return-from process-cmd-text
-          (make-user-cmd :func :cmd-error :input cmd-string)))
-      (make-user-cmd :func (cmd-table-entry-func cmd-entry)
+        (return-from process-command-text
+          (make-user-command :func :cmd-error :input cmd-string)))
+      (make-user-command :func (command-table-entry-func cmd-entry)
                      :input line
-                     :args (parse-args (cmd-table-entry-parsing cmd-entry)
+                     :args (parse-args (command-table-entry-parsing cmd-entry)
                                        cmd-args-string)
                      :hnum *cmd-number*))))
 
@@ -190,14 +212,14 @@
                  name-param)
                 (symbol
                  (string-downcase (write-to-string name-param))))))
-    (make-cmd-table-entry :name name :func func :desc desc
+    (make-command-table-entry :name name :func func :desc desc
                           :parsing parsing :group group
                           :abbr-len (if abbr-len
                                         abbr-len
                                         (length name)))))
 
 (defun %add-entry (cmd &optional abbr-len)
-  (let* ((name (cmd-table-entry-name cmd))
+  (let* ((name (command-table-entry-name cmd))
          (alen (if abbr-len
                    abbr-len
                    (length name))))
@@ -206,22 +228,22 @@
         (setf (gethash (subseq name 0 (1+ i)) *cmd-table-hash*)
               cmd)))))
 
-(defun add-cmd-table-entry (cmd-string abbr-len func-name desc parsing)
+(defun add-command-table-entry (cmd-string abbr-len func-name desc parsing)
   (%add-entry
    (make-cte cmd-string (symbol-function func-name) desc parsing :cmd abbr-len)
    abbr-len))
 
-(defun find-cmd (cmdstr)
+(defun find-command (cmdstr)
   (gethash (string-downcase cmdstr) *cmd-table-hash*))
 
-(defun user-cmd= (c1 c2)
+(defun user-command= (c1 c2)
   "Returns T if two user commands are equal"
-  (and (eq (user-cmd-func c1) (user-cmd-func c2))
-       (equal (user-cmd-args c1) (user-cmd-args c2))
-       (equal (user-cmd-input c1) (user-cmd-input c2))))
+  (and (eq (user-command-func c1) (user-command-func c2))
+       (equal (user-command-args c1) (user-command-args c2))
+       (equal (user-command-input c1) (user-command-input c2))))
 
 (defun add-to-history (cmd)
-  (unless (and *history* (user-cmd= cmd (car *history*)))
+  (unless (and *history* (user-command= cmd (car *history*)))
     (when (>= (length *history*) *max-history*)
       (setq *history* (nbutlast *history*
                                 (1+ (- (length *history*) *max-history*)))))
@@ -229,28 +251,29 @@
     (incf *cmd-number*)))
 
 (defun get-history (n)
-  (let ((cmd (find n *history* :key #'user-cmd-hnum :test #'eql)))
+  (let ((cmd (find n *history* :key #'user-command-hnum :test #'eql)))
     (if cmd
         cmd
-        *null-cmd*)))
+        *null-command*)))
 
-(defun get-cmd-doc-list (&optional (group :cmd))
+(defun get-command-doc-list (&optional (group :cmd))
   "Return list of all commands"
   (let ((cmds '()))
     (maphash (lambda (k v)
                (when (and
-                      (= (length k) (length (cmd-table-entry-name v)))
-                      (eq (cmd-table-entry-group v) group))
+                      (= (length k) (length (command-table-entry-name v)))
+                      (eq (command-table-entry-group v) group))
                  (push (list k
-                             (if (= (cmd-table-entry-abbr-len v)
+                             (if (= (command-table-entry-abbr-len v)
                                     (length k))
                                   ""
-                                  (subseq k 0 (cmd-table-entry-abbr-len v)))
-                             (cmd-table-entry-desc v)) cmds)))
+                                  (subseq k 0 (command-table-entry-abbr-len v)))
+                             (command-table-entry-desc v)) cmds)))
              *cmd-table-hash*)
     (sort cmds #'string-lessp :key #'car)))
 
-(defun cd-cmd (&optional string-dir)
+(define-repl-command (cd :parsing :string) (&optional string-dir)
+  "change default directory"
   (cond
     ((or (zerop (length string-dir))
          (string= string-dir "~"))
@@ -262,16 +285,19 @@
   (format *output* "~A~%" (namestring cl:*default-pathname-defaults*))
   (values))
 
-(defun pwd-cmd ()
+(define-repl-command pwd ()
+  "print current directory"
   (format *output* "Lisp's current working directory is ~s.~%"
           (namestring cl:*default-pathname-defaults*))
   (values))
 
-(defun trace-cmd (&rest args)
+(define-repl-command trace (&rest args)
+  "trace a function"
   (format *output* "~A~%" (eval `(trace ,@args)))
   (values))
 
-(defun untrace-cmd (&rest args)
+(define-repl-command untrace (&rest args)
+  "untrace a function"
   (format *output* "~A~%" (eval `(untrace ,@args)))
   (values))
 
@@ -284,7 +310,8 @@
   #+ccl (ccl:quit status)
   #-(or sbcl ccl) (error "Sorry, don't know how to quit on this Lisp."))
 
-(defun exit-cmd (&optional (status 0))
+(define-repl-command exit (&optional (status 0))
+  "exit sbcl"
   (let ((other-threads (other-threads)))
     (when other-threads
       (format *output* "There exists the following processes~%")
@@ -304,7 +331,8 @@
   (quit status)
   (values))
 
-(defun package-cmd (&optional pkg)
+(define-repl-command package (&optional pkg)
+  "change current package"
   (cond
     ((null pkg)
      (format *output* "The ~A package is current.~%"
@@ -325,7 +353,8 @@
           collect (subseq str i j) while j)))
 
 (let ((last-files-loaded nil))
-  (defun ld-cmd (&optional string-files)
+  (define-repl-command (ld :parsing :string) (&optional string-files)
+    "load a file"
     (if string-files
         (setq last-files-loaded string-files)
         (setq string-files last-files-loaded))
@@ -340,7 +369,8 @@
         (load file))))
   (values))
 
-(defun cf-cmd (string-files)
+(define-repl-command (cf :parsing :string) (string-files)
+  "compile file"
   (when string-files
     (dolist (arg (string-to-list-skip-spaces string-files))
       (compile-file arg)))
@@ -366,13 +396,15 @@
 
 ;;;; implementation of commands
 
-(defun apropos-cmd (string)
+(define-repl-command (apropos :parsing :string) (string)
+  "show apropos"
   (apropos (string-upcase string))
   (fresh-line *output*)
   (values))
 
 (let ((last-files-loaded nil))
-  (defun cload-cmd (&optional string-files)
+  (define-repl-command (cload :parsing :string) (&optional string-files)
+    "compile if needed and load file"
     (if string-files
         (setq last-files-loaded string-files)
         (setq string-files last-files-loaded))
@@ -381,54 +413,61 @@
       (load (compile-file-as-needed arg)))
     (values)))
 
-(defun inspect-cmd (arg)
+(define-repl-command inspect (arg)
+  "inspect an object"
   (inspector-fun (eval arg) nil *output*)
   (values))
 
-(defun istep-cmd (&optional arg-string)
+(define-repl-command istep (&optional arg-string)
+  "navigate within inspection of a lisp object"
   (istep (string-to-list-skip-spaces arg-string) *output*)
   (values))
 
-(defun describe-cmd (&rest args)
+(define-repl-command describe (&rest args)
+  "describe an object"
   (dolist (arg args)
     (eval `(describe ,arg)))
   (values))
 
-(defun macroexpand-cmd (arg)
+(define-repl-command macroexpand (arg)
+  "macroexpand an expression"
   (pprint (macroexpand arg) *output*)
   (values))
 
-(defun history-cmd ()
+(define-repl-command history ()
+  "print the recent history"
   (let ((n (length *history*)))
     (declare (fixnum n))
     (dotimes (i n)
       (declare (fixnum i))
       (let ((hist (nth (- n i 1) *history*)))
-        (format *output* "~3A " (user-cmd-hnum hist))
-        (if (stringp (user-cmd-input hist))
-            (format *output* "~A~%" (user-cmd-input hist))
-            (format *output* "~W~%" (user-cmd-input hist))))))
+        (format *output* "~3A " (user-command-hnum hist))
+        (if (stringp (user-command-input hist))
+            (format *output* "~A~%" (user-command-input hist))
+            (format *output* "~W~%" (user-command-input hist))))))
   (values))
 
-(defun help-cmd (&optional cmd)
+(define-repl-command help (&optional cmd)
+  "print this help"
   (cond
     (cmd
-     (let ((cmd-entry (find-cmd cmd)))
+     (let ((cmd-entry (find-command cmd)))
        (if cmd-entry
            (format *output* "Documentation for ~A: ~A~%"
-                   (cmd-table-entry-name cmd-entry)
-                   (cmd-table-entry-desc cmd-entry)))))
+                   (command-table-entry-name cmd-entry)
+                   (command-table-entry-desc cmd-entry)))))
     (t
      (format *output* "~11A ~4A ~A~%" "COMMAND" "ABBR" "DESCRIPTION")
      (format *output* "~11A ~4A ~A~%" "<n>" ""
              "re-execute <n>th history command")
-     (dolist (doc-entry (get-cmd-doc-list :cmd))
+     (dolist (doc-entry (get-command-doc-list :cmd))
        (format *output* "~11A ~4A ~A~%" (first doc-entry)
                (second doc-entry) (third doc-entry)))))
   (values))
 
-(defun alias-cmd ()
-  (let ((doc-entries (get-cmd-doc-list :alias)))
+(define-repl-command aliases ()
+  "show aliases"
+  (let ((doc-entries (get-command-doc-list :alias)))
     (typecase doc-entries
       (cons
        (format *output* "~11A ~A ~4A~%" "ALIAS" "ABBR" "DESCRIPTION")
@@ -441,24 +480,27 @@
 #+nil
 ;; later, this command can be defined portably in hemlock, which has a
 ;; suitable process abstraction.
-(defun shell-cmd (string-arg)
+(define-repl-command shell (string-arg)
   (sb-ext:run-program "/bin/sh" (list "-c" string-arg)
                       :input nil :output *output*)
   (values))
 
-(defun pushd-cmd (string-arg)
+(define-repl-command (pushd :parsing :string) (string-arg)
+  "push directory on stack"
   (push string-arg *dir-stack*)
   (cd-cmd string-arg)
   (values))
 
-(defun popd-cmd ()
+(define-repl-command popd ()
+  "pop directory from stack"
   (if *dir-stack*
       (let ((dir (pop *dir-stack*)))
         (cd-cmd dir))
       (format *output* "No directory on stack to pop.~%"))
   (values))
 
-(defun pop-cmd (&optional (n 1))
+(define-repl-command pop (&optional (n 1))
+  "pop up `n' (default 1) break levels"
   (cond
     (*inspect-break*
      (throw 'repl-catcher (values :inspect n)))
@@ -468,22 +510,28 @@
 
 (defvar *current-error* nil)
 
-(defun bt-cmd (&optional (n most-positive-fixnum))
+(define-repl-command bt (&optional (n most-positive-fixnum))
+  "backtrace `n' stack frames, default all"
   (declare (ignore n))
   (trivial-backtrace:print-backtrace *current-error*))
 
-(defun current-cmd ()
+(define-repl-command current ()
+  "print the expression for the current stack frame"
   (if *current-error*
       (describe *current-error*)
       (write-line "No error.a")))
 
-(defun top-cmd ()
+(define-repl-command top ()
+  "move to top stack frame"
   #+implement-the-debugger (sb-debug::frame-debug-command 0))
 
-(defun bottom-cmd ()
+(define-repl-command bottom ()
+  "move to bottom stack frame"
   #+implement-the-debugger (sb-debug::bottom-debug-command))
 
-(defun up-cmd (&optional (n 1))
+(define-repl-command up (&optional (n 1))
+  (declare (ignore n))
+  "move up `n' stack frames, default 1"
   #+implement-the-debugger
   (dotimes (i n)
     (if (and sb-debug::*current-frame*
@@ -493,7 +541,9 @@
           (format *output* "Top of the stack")
           (return-from up-cmd)))))
 
-(defun dn-cmd (&optional (n 1))
+(define-repl-command dn (&optional (n 1))
+  (declare (ignore n))
+  "move down `n' stack frames, default 1"
   #+implement-the-debugger
   (dotimes (i n)
     (if (and sb-debug::*current-frame*
@@ -503,7 +553,8 @@
           (format *output* "Bottom of the stack")
           (return-from dn-cmd)))))
 
-(defun continue-cmd (&optional (num 0))
+(define-repl-command continue (&optional (num 0))
+  "continue from a continuable error"
   ;; don't look at first restart
   (let ((restarts (compute-restarts)))
     (if restarts
@@ -528,7 +579,8 @@
             (invoke-restart-interactively restart)))
     (format *output* "~&There are no restarts"))))
 
-(defun error-cmd ()
+(define-repl-command error ()
+  "print the last error message"
   #+implement-the-debugger
   (when (plusp *break-level*)
     (if *inspect-break*
@@ -536,26 +588,30 @@
         (let ((sb-debug::*debug-restarts* (compute-restarts)))
           (sb-debug::error-debug-command)))))
 
-(defun frame-cmd ()
+(define-repl-command frame ()
+  "print info about the current frame"
   #+implement-the-debugger
   (sb-debug::print-frame-call sb-debug::*current-frame*))
 
-(defun zoom-cmd ()
+(define-repl-command zoom ()
+  "print the runtime stack"
   (trivial-backtrace:print-backtrace *current-error*))
 
-(defun local-cmd (&optional var)
+(define-repl-command local (&optional var)
+  "print the value of a local variable"
   (declare (ignore var))
   #+implement-the-debugger
   (sb-debug::list-locals-debug-command))
 
-(defun processes-cmd ()
+(define-repl-command processes ()
   (dolist (thread (bordeaux-threads:all-threads))
     (format *output* "~&~A" thread)
     (when (eq thread (bordeaux-threads:current-thread))
       (format *output* " [current listener]")))
   (values))
 
-(defun prepl::kill-cmd (&rest selected-threads)
+(define-repl-command kill (&rest selected-threads)
+  "kill (destroy) processes"
   (dolist (thread selected-threads)
     (let ((found (find thread (bordeaux-threads:all-threads)
 		       :key 'bordeaux-threads:thread-name
@@ -570,92 +626,39 @@
 #+nil
 ;; Cute idea, but a hassle to get right and somewhat useless in a
 ;; multi-buffer GUI like hemlock.
-(defun focus-cmd (&optional process)
+(define-repl-command focus (&optional process)
   (declare (ignore process)))
 
-(defun reset-cmd ()
+(define-repl-command reset ()
+  "reset to top break level"
   (when (find-restart 'abort-to-outmost-repl)
     (invoke-restart 'abort-to-outmost-repl)))
 
-(defun dirs-cmd ()
+(define-repl-command dirs ()
+  "show directory stack"
   (dolist (dir *dir-stack*)
     (format *output* "~a~%" dir))
   (values))
-
-
-;;;; dispatch table for commands
-
-(defmacro define-repl-command
-    (name-and-options (&rest args) &body docstring-and-forms)
-  (destructuring-bind (name &key parsing abbr-len aliases)
-      (if (listp name-and-options) name-and-options (list name-and-options))
-    (let ((docstring (when (stringp (car docstring-and-forms))
-		       (car docstring-and-forms)))
-	  (cmd-name (intern (format nil "~A-CMD" (symbol-name name))
-			    (symbol-package name))))
-      `(progn
-	 (defun ,cmd-name (,@args)
-	   ,@docstring-and-forms)
-	 ,@(iter (for alias in (cons (string-downcase name) aliases))
-		 (collect `(add-cmd-table-entry ',alias
-						',abbr-len
-						',cmd-name
-						',docstring
-						',parsing)))))))
 
 (define-repl-command (load-op :aliases ("make" "load-system")) (name)
   "Load the specified ASDF system"
   (asdf:operate 'asdf:load-op name)
   (prin1 (asdf:find-system name)))
 
-(let ((cmd-table
-       '(("aliases" 3 alias-cmd "show aliases")
-         ("apropos" 2 apropos-cmd "show apropos" :parsing :string)
-         ("bottom" 3 bottom-cmd "move to bottom stack frame")
-         ("top" 3 top-cmd "move to top stack frame")
-         ("bt" 2 bt-cmd "backtrace `n' stack frames, default all")
-         ("up" 2 up-cmd "move up `n' stack frames, default 1")
-         ("dn" 2 dn-cmd "move down `n' stack frames, default 1")
-         ("cd" 2 cd-cmd "change default diretory" :parsing :string)
-         ("ld" 2 ld-cmd "load a file" :parsing :string)
-         ("cf" 2 cf-cmd "compile file" :parsing :string)
-         ("cload" 2 cload-cmd "compile if needed and load file"
-          :parsing :string)
-         ("current" 3 current-cmd "print the expression for the current stack frame")
-         ("continue" 4 continue-cmd "continue from a continuable error")
-         ("describe" 2 describe-cmd "describe an object")
-         ("macroexpand" 2 macroexpand-cmd "macroexpand an expression")
-         ("package" 2 package-cmd "change current package")
-         ("error" 3 error-cmd "print the last error message")
-         ("exit" 2 exit-cmd "exit sbcl")
-         ("frame" 2 frame-cmd "print info about the current frame")
-         ("help" 2 help-cmd "print this help")
-         ("history" 3 history-cmd "print the recent history")
-         ("inspect" 2 inspect-cmd "inspect an object")
-         ("istep" 1 istep-cmd "navigate within inspection of a lisp object" :parsing :string)
-	 ("kill" 2 kill-cmd "kill (destroy) processes")
-         ;; ("focus" 2 focus-cmd "focus the top level on a process")
-         ("local" 3 local-cmd "print the value of a local variable")
-         ("pwd" 3 pwd-cmd "print current directory")
-         ("pushd" 2 pushd-cmd "push directory on stack" :parsing :string)
-         ("pop" 3 pop-cmd "pop up `n' (default 1) break levels")
-         ("popd" 4 popd-cmd "pop directory from stack")
-	 ("processes" 3 processes-cmd "list all processes")
-         ("reset" 3 reset-cmd "reset to top break level")
-         ("trace" 2 trace-cmd "trace a function")
-         ("untrace" 4 untrace-cmd "untrace a function")
-         ("dirs" 2 dirs-cmd "show directory stack")
-	 #+nil
-	 ;; later, this command can be defined portably in hemlock, which has a
-	 ;; suitable process abstraction.
-         ("shell" 2 shell-cmd "execute a shell cmd" :parsing :string)
-         ("zoom" 2 zoom-cmd "print the runtime stack")
-         )))
-  (dolist (cmd cmd-table)
-    (destructuring-bind (cmd-string abbr-len func-name desc &key parsing) cmd
-      (add-cmd-table-entry cmd-string abbr-len func-name desc parsing))))
 
 ;;;; machinery for aliases
+
+;;;; Fixme:
+;;;;
+;;;;  - ALIAS is a bad name, dating back to Allegro.
+;;;;    We should only be talking about commands.
+;;;;
+;;;;  - I don't see a reason to have a distiction between built-in commands
+;;;;    and user-defined commands.
+;;;;
+;;;;  - Little differences between DEFINE-REPL-COMMAND and ALIAS remain.
+;;;;
+;;;; Need to get rid of ALIAS in favour of DEFINE-REPL-COMMAND at some point.
 
 (defsetf alias (name &key abbr-len description) (user-func)
   `(progn
@@ -704,7 +707,7 @@
                      (symbol-name alias))))))
     (maphash
      (lambda (key cmd)
-       (when (eq (cmd-table-entry-group cmd) :alias)
+       (when (eq (command-table-entry-group cmd) :alias)
          (if remove-all
              (push key keys)
              (when (some
@@ -792,31 +795,32 @@
           (:no-error (prompt)
             (format stream "~A" prompt))))))
 
-(defun process-cmd (user-cmd)
-  ;; Processes a user command. Returns t if the user-cmd was a top-level
+(defun process-command (user-command)
+  "list all processes"
+  ;; Processes a user command. Returns t if the user-command was a top-level
   ;; command
-  (cond ((eq user-cmd *eof-cmd*)
+  (cond ((eq user-command *eof-command*)
          (when *exit-on-eof*
            (quit 0))
          (format *output* "EOF~%")
          t)
-        ((eq user-cmd *null-cmd*)
+        ((eq user-command *null-command*)
          t)
-        ((eq (user-cmd-func user-cmd) :cmd-error)
+        ((eq (user-command-func user-command) :cmd-error)
          (format *output* "Unknown top-level command: ~s.~%"
-                 (user-cmd-input user-cmd))
+                 (user-command-input user-command))
          (format *output* "Type `~Ahelp' for the list of commands.~%" *command-char*)
          t)
-        ((eq (user-cmd-func user-cmd) :history-error)
+        ((eq (user-command-func user-command) :history-error)
          (format *output* "Input numbered ~d is not on the history list~%"
-                 (user-cmd-input user-cmd))
+                 (user-command-input user-command))
          t)
-        ((functionp (user-cmd-func user-cmd))
-         (add-to-history user-cmd)
-         (apply (user-cmd-func user-cmd) (user-cmd-args user-cmd))
+        ((functionp (user-command-func user-command))
+         (add-to-history user-command)
+         (apply (user-command-func user-command) (user-command-args user-command))
          t)
         (t
-         (add-to-history user-cmd)
+         (add-to-history user-command)
          nil))) ; nope, not in my job description
 
 (defmacro rebinding ((&rest vars) &body body)

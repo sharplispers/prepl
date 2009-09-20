@@ -88,12 +88,12 @@
     (force-output *standard-output*))
   (let* ((*input* *standard-input*)
 	 (*output* *standard-output*)
-	 (user-cmd (read-cmd *input*)))
-    (unless (process-cmd user-cmd)
+	 (user-command (read-command *input*)))
+    (unless (process-command user-command)
       (let ((results
 	     (multiple-value-list
 	      (interactive-eval
-	       (user-cmd-input user-cmd)))))
+	       (user-command-input user-command)))))
 	(unless *noprint*
 	  (dolist (result results)
 	    (prin1 result *standard-output*)
