@@ -652,7 +652,7 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
   (format nil "a simple-string (~W) ~W" (length object) object))
 
 (defun n-word-bits ()
-  (or #+sbcl (sb-vm::n-word-bits)
+  (or #+sbcl sb-vm::n-word-bits
       ;; #+ccl ...
       64))
 
