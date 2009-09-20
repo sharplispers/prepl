@@ -35,9 +35,9 @@
         (*continuable-break* continuable))
     (iter
      (if *outmost-repl*
-	 (with-simple-restart (abort-to-outmost-repl "Abort to outmost REPL")
+	 (with-simple-restart (abort "Abort to REPL")
 	   (let ((*outmost-repl* nil))
-	     (rep-one)))
+	     (until (rep-one))))
 	 (until (rep-one))))))
 
 (defun interactive-eval (form)
@@ -88,13 +88,17 @@
     (force-output *standard-output*))
   (let* ((*input* *standard-input*)
 	 (*output* *standard-output*)
-	 (user-command (read-command *input*)))
+	 (user-command (read-command *input*))
+	 (level *break-level*))
     (unless (process-command user-command)
-      (let ((results
-	     (multiple-value-list
-	      (interactive-eval
-	       (user-command-input user-command)))))
-	(unless *noprint*
-	  (dolist (result results)
-	    (prin1 result *standard-output*)
-	    (fresh-line *standard-output*)))))))
+      (with-simple-restart (abort
+			    "~@<Reduce debugger level (to debug level ~W).~@:>"
+			    level)
+	(let ((results
+	       (multiple-value-list
+		(interactive-eval
+		 (user-command-input user-command)))))
+	  (unless *noprint*
+	    (dolist (result results)
+	      (prin1 result *standard-output*)
+	      (fresh-line *standard-output*))))))))

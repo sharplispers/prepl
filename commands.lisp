@@ -527,7 +527,7 @@
 
 (defvar *current-error* nil)
 
-(define-repl-command bt (&optional n)
+(define-repl-command bt (&optional (n most-positive-fixnum))
   "backtrace `n' stack frames, default all"
   (conium:call-with-debugging-environment
    (lambda ()
@@ -540,7 +540,7 @@
   "print the expression for the current stack frame"
   (if *current-error*
       (describe *current-error*)
-      (write-line "No error.a")))
+      (write-line "No error.")))
 
 (define-repl-command top ()
   "move to top stack frame"
@@ -600,14 +600,32 @@
             (invoke-restart-interactively restart)))
     (format *output* "~&There are no restarts"))))
 
+(define-repl-command abort ()
+  "Invoke ABORT restart."
+  ;; don't look at first restart
+  (when (find-restart 'abort)
+    (invoke-restart 'abort))
+  (format *output* "~&No abort restart found."))
+
 (define-repl-command error ()
   "print the last error message"
-  #+implement-the-debugger
-  (when (plusp *break-level*)
-    (if *inspect-break*
-        (sb-debug::show-restarts (compute-restarts) *output*)
-        (let ((sb-debug::*debug-restarts* (compute-restarts)))
-          (sb-debug::error-debug-command)))))
+  (if *current-error*
+      (format t "~&Current condition: ~S:~%  ~:*~A~%" *current-error*)
+      (format t "~&No current error.~%"))
+  (terpri)
+  (show-restarts)
+  (shiftf *** ** * *current-error*))
+
+(defun show-restarts ()
+  (format t "Available restarts:~%")
+  (let ((shadowing-names '()))
+    (iter (for restart in (compute-restarts))
+	  (for i from 0)
+	  (let ((name (restart-name restart)))
+	    (if (find name shadowing-names)
+		(setf name nil)
+		(push name shadowing-names))
+	    (format t "~4D ~@[[~A]~]~30T~A~%" i name restart)))))
 
 (define-repl-command frame ()
   "print info about the current frame"
@@ -621,7 +639,7 @@
      (mapcar (lambda (frame)
 	       (conium:print-frame frame *standard-output*)
 	       (fresh-line))
-	     (conium:compute-backtrace 0 nil)))))
+	     (conium:compute-backtrace 0 most-positive-fixnum)))))
 
 (define-repl-command local (&optional var)
   "print the value of a local variable"
@@ -859,9 +877,27 @@
   `(let (,@(mapcar (lambda (var) `(,var ,var)) vars))
      ,@body))
 
+#+sbcl
+;; unwinding through with-new-session seems to wreak havoc, so let's only
+;; wrap this around the outermost repl.
+(defvar *in-session-workaround* nil)
+
+(defun invoke-with-session-workaround-if-on-sbcl (fun)
+  #+sbcl (if *in-session-workaround*
+	     (funcall fun)
+	     (let ((*in-session-workaround* t))
+	       (sb-thread:with-new-session () (funcall fun))))
+  #-sbcl (funcall fun))
+
 (defmacro session-workaround-if-on-sbcl (&rest forms)
-  #+sbcl `(sb-thread:with-new-session () ,@forms)
-  #-sbcl `(progn ,@forms))
+  `(invoke-with-session-workaround-if-on-sbcl (lambda () ,@forms)))
+
+(defun debugger (condition hook)
+  (declare (ignore hook))
+  (let ((*current-error* condition))
+    (format t "~&Debugger entered for condition: ~S:~%  ~:*~A~%" *current-error*)
+    (show-restarts)
+    (repl)))
 
 (defun repl (&rest args &key break-level noprint inspect continuable)
   (declare (ignore break-level noprint inspect continuable))
@@ -870,4 +906,6 @@
 		     *dir-stack* *command-char* *prompt*
 		     *use-short-package-name* *max-history* *exit-on-eof*
 		     *history* *cmd-number*)
-    (session-workaround-if-on-sbcl (apply #'%repl args))))
+    (let ((*debugger-hook* #'debugger)
+	  #+sbcl (sb-ext:*invoke-debugger-hook* #'debugger))
+      (session-workaround-if-on-sbcl (apply #'%repl args)))))
