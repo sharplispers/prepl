@@ -1,0 +1,40 @@
+INTRODUCTION
+============
+
+prepl is a REPL implementation, also known as a Lisp listener.
+
+It is written in fully portable Common Lisp (aside from minor
+workarounds for implementation-specific issues...), with major
+unportable bits being handled by external portability libraries.
+
+
+HISTORY
+=======
+
+prepl is a fork of SBCL's sb-aclrepl module.
+
+Since then, it has been ported to Clozure CL and other Lisps.
+
+Debugging capabilities have been added.
+
+Overall, REPL does not have Allegro compatibility as a goal, although it
+still largely keeps its interface.
+
+
+USAGE
+=====
+
+Manual startup: 
+  (asdf:operate 'asdf:load-op 'prepl)
+  (prepl:repl)
+
+
+SEE ALSO
+========
+
+The Qt version of Hemlock uses PREPL in its Slave buffers.
+
+
+MAINTAINER
+==========
+David Lichteblau
