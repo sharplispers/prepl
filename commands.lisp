@@ -17,11 +17,10 @@
   (group nil) ; command group (:cmd or :alias)
   (abbr-len 0)) ; abbreviation length
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *default-prompt*
-    "~:[~3*~;[~:*~D~:[~;~:*:~D~]~:[~;i~]~:[~;c~]] ~]~A(~D): "
-    "The default prompt."))
-(defparameter *prompt* #.*default-prompt*
+(defparameter *default-prompt*
+  "~:[~3*~;[~:*~D~:[~;~:*:~D~]~:[~;i~]~:[~;c~]] ~]~A~*> "
+  "The default prompt.")
+(defparameter *prompt* *default-prompt*
   "The current prompt string or formatter function.")
 (defparameter *use-short-package-name* t
   "when T, use the shortnest package nickname in a prompt")
@@ -528,10 +527,14 @@
 
 (defvar *current-error* nil)
 
-(define-repl-command bt (&optional (n most-positive-fixnum))
+(define-repl-command bt (&optional n)
   "backtrace `n' stack frames, default all"
-  (declare (ignore n))
-  (trivial-backtrace:print-backtrace *current-error*))
+  (conium:call-with-debugging-environment
+   (lambda ()
+     (mapcar (lambda (frame)
+	       (conium:print-frame frame *standard-output*)
+	       (fresh-line))
+	     (conium:compute-backtrace 0 n)))))
 
 (define-repl-command current ()
   "print the expression for the current stack frame"
@@ -613,7 +616,12 @@
 
 (define-repl-command zoom ()
   "print the runtime stack"
-  (trivial-backtrace:print-backtrace *current-error*))
+  (conium:call-with-debugging-environment
+   (lambda ()
+     (mapcar (lambda (frame)
+	       (conium:print-frame frame *standard-output*)
+	       (fresh-line))
+	     (conium:compute-backtrace 0 nil)))))
 
 (define-repl-command local (&optional var)
   "print the value of a local variable"
@@ -800,7 +808,8 @@
                                frame-number
                                *inspect-break*
                                *continuable-break*
-                               (prompt-package-name) *cmd-number*)
+                               (prompt-package-name)
+			       *cmd-number*)
                       stream)
         (handler-case
             (format nil *prompt*

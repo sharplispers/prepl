@@ -6,4 +6,4 @@
 	       (:file "prepl")
 	       (:file "commands")
 	       (:file "inspect"))
-  :depends-on (:closer-mop :iterate :bordeaux-threads :trivial-backtrace))
+  :depends-on (:closer-mop :iterate :bordeaux-threads :conium))
