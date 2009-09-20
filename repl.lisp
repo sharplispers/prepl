@@ -803,13 +803,11 @@
   `(let (,@(mapcar (lambda (var) `(,var ,var)) vars))
      ,@body))
 
-(defun repl (&key noprint)
-  (let ((*standard-input* *terminal-io*)
-	(*standard-output* *terminal-io*))
-    (rebinding
-        (*break-level* *inspect-break* *continuable-break*
-		       *dir-stack* *command-char* *prompt*
-		       *use-short-package-name* *max-history* *exit-on-eof*
-		       *history* *cmd-number*)
-     (let ((*noprint* noprint))
-       (%repl :noprint noprint :break-level 0)))))
+(defun repl (&rest args &key break-level noprint inspect continuable)
+  (declare (ignore break-level noprint inspect continuable))
+  (rebinding
+      (*break-level* *inspect-break* *continuable-break*
+		     *dir-stack* *command-char* *prompt*
+		     *use-short-package-name* *max-history* *exit-on-eof*
+		     *history* *cmd-number*)
+    (apply #'%repl args)))
