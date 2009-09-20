@@ -1,4 +1,4 @@
-;;;; Inspector for sb-aclrepl
+;;;; Inspector for prepl
 ;;;;
 ;;;; The documentation, which may or may not apply in its entirety at
 ;;;; any given time, for this functionality is on the ACL website:
@@ -7,7 +7,7 @@
 ;;;; A summary of inspector navigation is contained in the below *INSPECT-HELP*
 ;;;; variable.
 
-(cl:in-package #:sb-aclrepl)
+(cl:in-package #:prepl)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defconstant +default-inspect-length+ 20))
@@ -57,7 +57,6 @@ The commands are:
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defvar *inspect-unbound-object-marker* (gensym "INSPECT-UNBOUND-OBJECT-")))
 
-
 (defun inspector-fun (object input-stream output-stream)
   (let ((*current-inspect* nil)
         (*inspect-raw* nil)
@@ -71,7 +70,10 @@ The commands are:
       (repl :inspect t)))
   (values))
 
-(setq sb-impl::*inspect-fun* #'inspector-fun)
+;; hook into CL:INSPECT if the implementation supports it
+#+ccl (setf *default-inspector-ui-creation-function*
+	    (lambda (thing) (inspector-fun thing *terminal-io* *terminal-io*)))
+#+sbcl (setq sb-impl::*inspect-fun* #'inspector-fun)
 
 (defun istep (args stream)
   (unless *current-inspect*
@@ -324,14 +326,11 @@ The commands are:
       (inspected-elements object length skip)
     (fresh-line stream)
     (format stream "~A" (inspected-description object))
-    (unless (or *skip-address-display*
-                (eq object *inspect-unbound-object-marker*)
-                (and (= sb-vm::n-word-bits 64) (typep object 'single-float))
-                (characterp object) (typep object 'fixnum))
-      (write-string " at #x" stream)
-      (format stream (n-word-bits-hex-format)
-              (logand (sb-kernel:get-lisp-obj-address object)
-                      (lognot sb-vm:lowtag-mask))))
+    (unless *skip-address-display*
+      (let ((addr (address-of-object object)))
+	(when addr
+	  (write-string " at #x" stream)
+	  (format stream (n-word-bits-hex-format) addr))))
     (dotimes (i count)
       (fresh-line stream)
       (display-labeled-element (elt elements i) (elt labels i) stream))))
@@ -529,7 +528,7 @@ position with the label if the label is a string."
       ((stringp id)
        (cons position id))
       ((eq (parts-seq-type parts) :bignum)
-       (cons position (case sb-vm::n-word-bits
+       (cons position (case (n-word-bits)
                             (32 :hex32)
                             (64 :hex64))))
       (t
@@ -571,11 +570,16 @@ position with the label if the label is a string."
 (defmethod inspected-description ((object function))
   (format nil "~S" object) nil)
 
+(defun displaced-array-p (object)
+  (or #+ccl (ccl:displaced-array-p object)
+      #+sbcl (and (sb-kernel:array-header-p object)
+		  (sb-kernel:%array-displaced-p object))
+      nil))
+
 (defmethod inspected-description ((object vector))
   (declare (vector object))
   (format nil "a ~:[~;displaced ~]vector (~W)"
-          (and (sb-kernel:array-header-p object)
-               (sb-kernel:%array-displaced-p object))
+          (displace-array-p object)
           (length object)))
 
 (defmethod inspected-description ((object simple-vector))
@@ -587,8 +591,7 @@ position with the label if the label is a string."
 (defmethod inspected-description ((object array))
   (declare (array object))
   (format nil "~:[A displaced~;An~] array of ~A with dimensions ~W"
-          (and (sb-kernel:array-header-p object)
-               (sb-kernel:%array-displaced-p object))
+          (displace-array-p object)
           (array-element-type object)
           (array-dimensions object)))
 
@@ -625,53 +628,29 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
               ((:dotted :cyclic) "+tail")
               (:normal "")))))
 
+(defun address-of-object (object)
+  (unless (or (characterp object)
+	      (typep object 'fixnum))
+    #+sbcl (unless (or (eq object *inspect-unbound-object-marker*)
+		       (and (= (n-word-bits) 64)
+			    (typep object 'single-float)))
+	     (logand (sb-kernel:get-lisp-obj-address object)
+		     (lognot sb-vm:lowtag-mask)))))
+
 (defun n-word-bits-hex-format ()
-  (case sb-vm::n-word-bits
+  (case (n-word-bits)
     (64 "~16,'0X")
     (32 "~8,'0X")
     (t  "~X")))
 
-(defun ref32-hexstr (obj &optional (offset 0))
-  (format nil "~8,'0X" (ref32 obj offset)))
-
-(defun ref32 (obj &optional (offset 0))
-  (sb-sys::without-gcing
-   (sb-sys:sap-ref-32
-    (sb-sys:int-sap
-     (logand (sb-kernel:get-lisp-obj-address obj) (lognot sb-vm:lowtag-mask)))
-    offset)))
-
-(defun description-maybe-internals (fmt objects internal-fmt &rest args)
-  (let ((base (apply #'format nil fmt objects)))
-    (if *skip-address-display*
-        base
-        (concatenate 'string
-                     base " " (apply #'format nil internal-fmt args)))))
-
 (defmethod inspected-description ((object double-float))
-  (let ((start (round (* 2 sb-vm::n-word-bits) 8)))
-    (description-maybe-internals "double-float ~W" (list object)
-                                 "[#~A ~A]"
-                                 (ref32-hexstr object (+ start 4))
-                                 (ref32-hexstr object start))))
+  (format nil  "double-float ~W" object))
 
 (defmethod inspected-description ((object single-float))
-  (ecase sb-vm::n-word-bits
-    (32
-     (description-maybe-internals "single-float ~W" (list object)
-                                  "[#x~A]"
-                                  (ref32-hexstr object (round sb-vm::n-word-bits 8))))
-    (64
-     ;; on 64-bit platform, single-floats are not boxed
-     (description-maybe-internals "single-float ~W" (list object)
-                                  "[#x~8,'0X]"
-                                  (ash (sb-kernel:get-lisp-obj-address object) -32)))))
+  (format nil "single-float ~W" object))
 
 (defmethod inspected-description ((object fixnum))
-  (description-maybe-internals
-   "fixnum ~W" (list object)
-   (concatenate 'string "[#x" (n-word-bits-hex-format) "]")
-   (ash object (1- sb-vm:n-lowtag-bits))))
+  (format nil "fixnum ~W" object))
 
 (defmethod inspected-description ((object complex))
   (format nil "complex number ~W" object))
@@ -679,38 +658,19 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
 (defmethod inspected-description ((object simple-string))
   (format nil "a simple-string (~W) ~W" (length object) object))
 
-(defun bignum-words (bignum)
-  "Return the number of words in a bignum"
-  (ash
-   (logand (ref32 bignum) (lognot sb-vm:widetag-mask))
-   (- sb-vm:n-widetag-bits)))
-
-(defun bignum-component-at (bignum offset)
-  "Return the word at offset"
-  (case sb-vm::n-word-bits
-        (32
-         (ref32 bignum (* 4 (1+ offset))))
-        (64
-         (let ((start (* 8 (1+ offset))))
-           (+ (ref32 bignum start)
-              (ash (ref32 bignum (+ 4 start)) 32))))))
+(defun n-word-bits ()
+  (or #+sbcl (sb-vm::n-word-bits)
+      ;; #+ccl ...
+      64))
 
 (defmethod inspected-description ((object bignum))
-  (format nil  "bignum ~W with ~D ~A-bit word~P" object
-          (bignum-words object) sb-vm::n-word-bits (bignum-words object)))
+  (format nil  "bignum ~W; length ~D" object (integer-length object)))
 
 (defmethod inspected-description ((object ratio))
   (format nil "ratio ~W" object))
 
 (defmethod inspected-description ((object character))
-  ;; FIXME: This will need to change as and when we get more characters
-  ;; than just the 256 we have today.
-  (description-maybe-internals
-   "character ~W char-code #x~2,'0X"
-   (list object (char-code object))
-   "[#x~8,'0X]"
-   (logior sb-vm:character-widetag (ash (char-code object)
-                                        sb-vm:n-widetag-bits))))
+  (format nil "character ~W char-code #x~4,'0X" object))
 
 (defmethod inspected-description ((object t))
   (format nil "a generic object ~W" object))
@@ -786,12 +746,14 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
 
 (defun inspected-structure-parts (object)
   (let ((components-list '())
-        (info (sb-kernel:layout-info (sb-kernel:layout-of object))))
+        #+sbcl (info (sb-kernel:layout-info (sb-kernel:layout-of object))))
+    #+sbcl
     (when (sb-kernel::defstruct-description-p info)
-      (dolist (dd-slot (sb-kernel:dd-slots info) (nreverse components-list))
+      (dolist (dd-slot (sb-kernel:dd-slots info))
         (push (cons (string (sb-kernel:dsd-name dd-slot))
                     (funcall (sb-kernel:dsd-accessor-name dd-slot) object))
-              components-list)))))
+              components-list)))
+    (nreverse components-list)))
 
 (defmethod inspected-parts ((object structure-object))
   (let ((components (inspected-structure-parts object)))
@@ -799,9 +761,9 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
 
 (defun inspected-standard-object-parts (object)
   (let ((components nil)
-        (class-slots (sb-pcl::class-slots (class-of object))))
+        (class-slots (c2mop:class-slots (class-of object))))
     (dolist (class-slot class-slots (nreverse components))
-      (let* ((slot-name (slot-value class-slot 'sb-pcl::name))
+      (let* ((slot-name (c2mop:slot-definition-name class-slot))
              (slot-value (if (slot-boundp object slot-name)
                              (slot-value object slot-name)
                              *inspect-unbound-object-marker*)))
@@ -817,12 +779,13 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
     (list components (length components) :named nil)))
 
 (defmethod inspected-parts ((object function))
-  (let* ((type (sb-kernel:widetag-of object))
-         (object (if (= type sb-vm:closure-header-widetag)
-                     (sb-kernel:%closure-fun object)
-                     object))
-         (components (list (cons "arglist"
-                               (sb-kernel:%simple-fun-arglist object)))))
+  (let* (#+sbcl (type (sb-kernel:widetag-of object))
+         #+sbcl (object (if (= type sb-vm:closure-header-widetag)
+			    (sb-kernel:%closure-fun object)
+			    object))
+	 (components (list
+		      #+sbcl (cons "arglist"
+				   (sb-kernel:%simple-fun-arglist object)))))
     (list components (length components) :named nil)))
 
 (defmethod inspected-parts ((object vector))

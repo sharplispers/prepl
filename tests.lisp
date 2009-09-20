@@ -1,11 +1,11 @@
-;; Tests for sb-aclrepl
+;; Tests for prepl
 
 (defpackage #:aclrepl-tests
-  (:use #:sb-aclrepl #:cl #:sb-rt))
+  (:use #:prepl #:cl #:sb-rt))
 (in-package #:aclrepl-tests)
 
-(declaim (special sb-aclrepl::*skip-address-display*
-                  sb-aclrepl::*inspect-unbound-object-marker*))
+(declaim (special prepl::*skip-address-display*
+                  prepl::*inspect-unbound-object-marker*))
 
 (setf sb-rt::*catch-errors* nil)
 
@@ -70,16 +70,16 @@
   (setf (cddr *circle-list5*) *circle-list5*))
 
 (defun find-position (object id)
-    (nth-value 0 (sb-aclrepl::find-part-id object id)))
+    (nth-value 0 (prepl::find-part-id object id)))
 (defun parts (object)
-  (let ((sb-aclrepl::*skip-address-display* t))
-    (sb-aclrepl::inspected-parts object)))
+  (let ((prepl::*skip-address-display* t))
+    (prepl::inspected-parts object)))
 (defun description (object)
-  (let ((sb-aclrepl::*skip-address-display* t))
-    (sb-aclrepl::inspected-description object)))
+  (let ((prepl::*skip-address-display* t))
+    (prepl::inspected-description object)))
 (defun elements (object &optional print (skip 0))
-  (let ((sb-aclrepl::*skip-address-display* t))
-    (sb-aclrepl::inspected-elements object print skip)))
+  (let ((prepl::*skip-address-display* t))
+    (prepl::inspected-elements object print skip)))
 (defun elements-components (object &optional print (skip 0))
     (nth-value 0 (elements object print skip )))
 (defun elements-labels (object &optional print (skip 0))
@@ -89,39 +89,39 @@
 
 (defun labeled-element (object pos &optional print (skip 0))
   (with-output-to-string (strm)
-    (let ((sb-aclrepl::*skip-address-display* t))
-      (sb-aclrepl::display-labeled-element
+    (let ((prepl::*skip-address-display* t))
+      (prepl::display-labeled-element
        (aref (the simple-vector (elements-components object print skip)) pos)
        (aref (the simple-vector (elements-labels object print skip)) pos)
        strm))))
 
 (defun display (object &optional print (skip 0))
   (with-output-to-string (strm)
-    (let ((sb-aclrepl::*skip-address-display* t))
-      (sb-aclrepl::display-inspect object strm print skip))))
+    (let ((prepl::*skip-address-display* t))
+      (prepl::display-inspect object strm print skip))))
 
 (defun do-inspect (object)
   (with-output-to-string (strm)
-    (let ((sb-aclrepl::*skip-address-display* t))
-      (sb-aclrepl::inspector `(quote ,object) nil strm))))
+    (let ((prepl::*skip-address-display* t))
+      (prepl::inspector `(quote ,object) nil strm))))
 
 (defun istep (args)
   (with-output-to-string (strm)
-    (let ((sb-aclrepl::*skip-address-display* t))
-      (sb-aclrepl::istep args strm))))
+    (let ((prepl::*skip-address-display* t))
+      (prepl::istep args strm))))
 
 (deftest find.list.0 (find-position *normal-list* 0) 0)
 (deftest find.list.1 (find-position *normal-list* 0) 0)
 (deftest find.list.2 (find-position *normal-list* 1) 1)
 (deftest find.list.3 (find-position *normal-list* 2) 2)
-(deftest parts.list.1 (sb-aclrepl::parts-count (parts *normal-list*)) 3)
-(deftest parts.list.2 (sb-aclrepl::component-at (parts *normal-list*) 0) a)
-(deftest parts.list.3 (sb-aclrepl::component-at (parts *normal-list*) 1) b)
-(deftest parts.list.4 (sb-aclrepl::component-at (parts *normal-list*) 2) 3)
-(deftest parts.list.5 (sb-aclrepl::label-at (parts *normal-list*) 0) 0)
-(deftest parts.list.6 (sb-aclrepl::label-at (parts *normal-list*) 1) 1)
-(deftest parts.list.7 (sb-aclrepl::label-at (parts *normal-list*) 2) 2)
-(deftest parts.list.8 (sb-aclrepl::parts-seq-type (parts *normal-list*)) :list)
+(deftest parts.list.1 (prepl::parts-count (parts *normal-list*)) 3)
+(deftest parts.list.2 (prepl::component-at (parts *normal-list*) 0) a)
+(deftest parts.list.3 (prepl::component-at (parts *normal-list*) 1) b)
+(deftest parts.list.4 (prepl::component-at (parts *normal-list*) 2) 3)
+(deftest parts.list.5 (prepl::label-at (parts *normal-list*) 0) 0)
+(deftest parts.list.6 (prepl::label-at (parts *normal-list*) 1) 1)
+(deftest parts.list.7 (prepl::label-at (parts *normal-list*) 2) 2)
+(deftest parts.list.8 (prepl::parts-seq-type (parts *normal-list*)) :list)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun basename (id &optional print (skip 0))
@@ -233,7 +233,7 @@
 (def-elements-tests *empty-class* 0 nil nil)
 #+ignore ;; FIXME
 (def-elements-tests *simple-class* 3
-  #(#.sb-aclrepl::*inspect-unbound-object-marker* 0 "abc")
+  #(#.prepl::*inspect-unbound-object-marker* 0 "abc")
   #((0 . "A") (1 . "SECOND") (2 . "REALLY-LONG-SLOT-NAME")))
 (def-elements-tests *empty-struct* 0 nil nil)
 (def-elements-tests *simple-struct* 3

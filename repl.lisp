@@ -1,13 +1,4 @@
-;;;; Replicate much of the ACL toplevel functionality in SBCL. Mostly
-;;;; this is portable code, but fundamentally it all hangs from a few
-;;;; SBCL-specific hooks like SB-INT:*REPL-READ-FUN* and
-;;;; SB-INT:*REPL-PROMPT-FUN*.
-;;;;
-;;;; The documentation, which may or may not apply in its entirety at
-;;;; any given time, for this functionality is on the ACL website:
-;;;;   <http://www.franz.com/support/documentation/6.2/doc/top-level.htm>.
-
-(cl:in-package :sb-aclrepl)
+(cl:in-package :prepl)
 
 (defstruct user-cmd
   (input nil) ; input, maybe a string or form
@@ -84,6 +75,7 @@
                    (if (eq form eof)
                        *eof-cmd*
                        (make-user-cmd :input form :func nil :hnum *cmd-number*)))))))
+    (skip-remaining-whitespace input-stream)
     (if (and (eq cmd *eof-cmd*) (typep input-stream 'string-stream))
         (throw 'repl-catcher cmd)
         cmd)))
@@ -279,39 +271,23 @@
   (values))
 
 (defun trace-cmd (&rest args)
-  (if args
-      (format *output* "~A~%" (eval (sb-debug::expand-trace args)))
-      (format *output* "~A~%" (sb-debug::%list-traced-funs)))
+  (format *output* "~A~%" (eval `(trace ,@args)))
   (values))
 
 (defun untrace-cmd (&rest args)
-  (if args
-      (format *output* "~A~%"
-              (eval
-               (sb-int:collect ((res))
-                (let ((current args))
-                  (loop
-                   (unless current (return))
-                   (let ((name (pop current)))
-                     (res (if (eq name :function)
-                              `(sb-debug::untrace-1 ,(pop current))
-                              `(sb-debug::untrace-1 ',name))))))
-                `(progn ,@(res) t))))
-      (format *output* "~A~%" (eval (sb-debug::untrace-all))))
+  (format *output* "~A~%" (eval `(untrace ,@args)))
   (values))
 
-#+sb-thread
-(defun all-threads ()
-  "Return a list of all threads"
-  (sb-thread:list-all-threads))
-
-#+sb-thread
 (defun other-threads ()
   "Returns a list of all threads except the current one"
-  (delete sb-thread:*current-thread* (all-threads)))
+  (remove (bordeaux-threads:current-thread) (bordeaux-threads:all-threads)))
+
+(defun quit (status)
+  #+sbcl (sb-ext:quit :unix-status status)
+  #+ccl (ccl:quit status)
+  #-(or sbcl ccl) (error "Sorry, don't know how to quit on this Lisp."))
 
 (defun exit-cmd (&optional (status 0))
-  #+sb-thread
   (let ((other-threads (other-threads)))
     (when other-threads
       (format *output* "There exists the following processes~%")
@@ -325,10 +301,10 @@
             ;; loop in case more threads get created while trying to exit
             (do ((threads other-threads (other-threads)))
                 ((eq nil threads))
-              (map nil #'sb-thread:destroy-thread threads)
+              (map nil #'bordeaux-threads:destroy-thread threads)
               (sleep 0.2))
             (return-from exit-cmd)))))
-  (sb-ext:quit :unix-status status)
+  (quit status)
   (values))
 
 (defun package-cmd (&optional pkg)
@@ -465,6 +441,9 @@
        (format *output* "No aliases are defined~%"))))
   (values))
 
+#+nil
+;; later, this command can be defined portably in hemlock, which has a
+;; suitable process abstraction.
 (defun shell-cmd (string-arg)
   (sb-ext:run-program "/bin/sh" (list "-c" string-arg)
                       :input nil :output *output*)
@@ -490,19 +469,25 @@
      (throw 'repl-catcher (values :pop n))))
   (values))
 
+(defvar *current-error* nil)
+
 (defun bt-cmd (&optional (n most-positive-fixnum))
-  (sb-debug::backtrace n))
+  (declare (ignore n))
+  (trivial-backtrace:print-backtrace *current-error*))
 
 (defun current-cmd ()
-  (sb-debug::describe-debug-command))
+  (if *current-error*
+      (describe *current-error*)
+      (write-line "No error.a")))
 
 (defun top-cmd ()
-  (sb-debug::frame-debug-command 0))
+  #+implement-the-debugger (sb-debug::frame-debug-command 0))
 
 (defun bottom-cmd ()
-  (sb-debug::bottom-debug-command))
+  #+implement-the-debugger (sb-debug::bottom-debug-command))
 
 (defun up-cmd (&optional (n 1))
+  #+implement-the-debugger
   (dotimes (i n)
     (if (and sb-debug::*current-frame*
              (sb-di:frame-up sb-debug::*current-frame*))
@@ -512,6 +497,7 @@
           (return-from up-cmd)))))
 
 (defun dn-cmd (&optional (n 1))
+  #+implement-the-debugger
   (dotimes (i n)
     (if (and sb-debug::*current-frame*
              (sb-di:frame-down sb-debug::*current-frame*))
@@ -546,6 +532,7 @@
     (format *output* "~&There are no restarts"))))
 
 (defun error-cmd ()
+  #+implement-the-debugger
   (when (plusp *break-level*)
     (if *inspect-break*
         (sb-debug::show-restarts (compute-restarts) *output*)
@@ -553,6 +540,7 @@
           (sb-debug::error-debug-command)))))
 
 (defun frame-cmd ()
+  #+implement-the-debugger
   (sb-debug::print-frame-call sb-debug::*current-frame*))
 
 (defun zoom-cmd ()
@@ -560,50 +548,37 @@
 
 (defun local-cmd (&optional var)
   (declare (ignore var))
+  #+implement-the-debugger
   (sb-debug::list-locals-debug-command))
 
 (defun processes-cmd ()
-  #+sb-thread
-  (dolist (thread (all-threads))
+  (dolist (thread (bordeaux-threads:all-threads))
     (format *output* "~&~A" thread)
-    (when (eq thread sb-thread:*current-thread*)
+    (when (eq thread (bordeaux-threads:current-thread))
       (format *output* " [current listener]")))
-  #-sb-thread
-  (format *output* "~&Threads are not supported in this version of sbcl")
   (values))
 
-(defun sb-aclrepl::kill-cmd (&rest selected-threads)
-  #+sb-thread
+(defun prepl::kill-cmd (&rest selected-threads)
   (dolist (thread selected-threads)
-    (let ((found (find thread (all-threads) :key 'sb-thread:thread-name
+    (let ((found (find thread (bordeaux-threads:all-threads)
+		       :key 'bordeaux-threads:thread-name
                        :test 'equal)))
       (if found
           (progn
             (format *output* "~&Destroying thread ~A" thread)
-            (sb-thread:destroy-thread found))
+            (bordeaux-threads:destroy-thread found))
           (format *output* "~&Thread ~A not found" thread))))
-  #-sb-thread
-  (declare (ignore selected-threads))
-  #-sb-thread
-  (format *output* "~&Threads are not supported in this version of sbcl")
   (values))
 
+#+nil
+;; Cute idea, but a hassle to get right and somewhat useless in a
+;; multi-buffer GUI like hemlock.
 (defun focus-cmd (&optional process)
-  #-sb-thread
-  (declare (ignore process))
-  #+sb-thread
-  (when process
-    (format *output* "~&Focusing on next thread waiting waiting for the debugger~%"))
-  #+sb-thread
-  (progn
-    (sb-thread:release-foreground)
-    (sleep 1))
-  #-sb-thread
-  (format *output* "~&Threads are not supported in this version of sbcl")
-  (values))
+  (declare (ignore process)))
 
 (defun reset-cmd ()
-  (throw 'sb-impl::toplevel-catcher nil))
+  (when (find-restart 'abort-to-outmost-repl)
+    (invoke-restart 'abort-to-outmost-repl)))
 
 (defun dirs-cmd ()
   (dolist (dir *dir-stack*)
@@ -638,18 +613,21 @@
          ("history" 3 history-cmd "print the recent history")
          ("inspect" 2 inspect-cmd "inspect an object")
          ("istep" 1 istep-cmd "navigate within inspection of a lisp object" :parsing :string)
-         #+sb-thread ("kill" 2 kill-cmd "kill (destroy) processes")
-         #+sb-thread ("focus" 2 focus-cmd "focus the top level on a process")
+	 ("kill" 2 kill-cmd "kill (destroy) processes")
+         ;; ("focus" 2 focus-cmd "focus the top level on a process")
          ("local" 3 local-cmd "print the value of a local variable")
          ("pwd" 3 pwd-cmd "print current directory")
          ("pushd" 2 pushd-cmd "push directory on stack" :parsing :string)
          ("pop" 3 pop-cmd "pop up `n' (default 1) break levels")
          ("popd" 4 popd-cmd "pop directory from stack")
-         #+sb-thread ("processes" 3 processes-cmd "list all processes")
+	 ("processes" 3 processes-cmd "list all processes")
          ("reset" 3 reset-cmd "reset to top break level")
          ("trace" 2 trace-cmd "trace a function")
          ("untrace" 4 untrace-cmd "untrace a function")
          ("dirs" 2 dirs-cmd "show directory stack")
+	 #+nil
+	 ;; later, this command can be defined portably in hemlock, which has a
+	 ;; suitable process abstraction.
          ("shell" 2 shell-cmd "execute a shell cmd" :parsing :string)
          ("zoom" 2 zoom-cmd "print the runtime stack")
          )))
@@ -747,16 +725,32 @@
 (defun whitespace-char-not-newline-p (x)
   (and (whitespace-char-p x)
        (not (char= x #\newline))))
-
-;;;; linking into SBCL hooks
 
-(defun repl-prompt-fun (stream)
+(defun skip-remaining-whitespace (&optional stream)
+  (iter
+   (let ((char (read-char-no-hang stream nil *eof-marker*)))
+     (while char)
+     (until (eq char *eof-marker*))
+     (unless (whitespace-char-p char)
+       (unread-char char stream)
+       (return)))))
+
+;;;; the following functions used to be hooks in SBCL
+
+(defun frame-number ()
+  #+implement-the-debugger (when (and (plusp *break-level*)
+				      sb-debug::*current-frame*)
+			     (sb-di::frame-number sb-debug::*current-frame*))
+  nil)
+
+(defvar *prompt-hooks*
+  (list #+sbcl #'sb-thread::get-foreground))
+
+(defun prompt (stream)
   (let ((break-level (when (plusp *break-level*)
                        *break-level*))
-        (frame-number (when (and (plusp *break-level*)
-                                 sb-debug::*current-frame*)
-                        (sb-di::frame-number sb-debug::*current-frame*))))
-    (sb-thread::get-foreground)
+        (frame-number (frame-number)))
+    (run-hooks *prompt-hooks*)
     (fresh-line stream)
     (if (functionp *prompt*)
         (write-string (funcall *prompt*
@@ -783,7 +777,7 @@
   ;; command
   (cond ((eq user-cmd *eof-cmd*)
          (when *exit-on-eof*
-           (sb-ext:quit))
+           (quit 0))
          (format *output* "EOF~%")
          t)
         ((eq user-cmd *null-cmd*)
@@ -800,45 +794,22 @@
         ((functionp (user-cmd-func user-cmd))
          (add-to-history user-cmd)
          (apply (user-cmd-func user-cmd) (user-cmd-args user-cmd))
-         ;;(fresh-line)
          t)
         (t
          (add-to-history user-cmd)
          nil))) ; nope, not in my job description
 
-(defun repl-read-form-fun (input output)
-  ;; Pick off all the leading ACL magic commands, then return a normal
-  ;; Lisp form.
-  (let ((*input* input)
-        (*output* output))
-    (loop for user-cmd = (read-cmd *input*) do
-        (if (process-cmd user-cmd)
-            (progn
-              (funcall sb-int:*repl-prompt-fun* *output*)
-              (force-output *output*))
-            (return (user-cmd-input user-cmd))))))
+(defmacro rebinding ((&rest vars) &body body)
+  `(let (,@(mapcar (lambda (var) `(,var ,var)) vars))
+     ,@body))
 
-
-(setf sb-int:*repl-prompt-fun* #'repl-prompt-fun
-      sb-int:*repl-read-form-fun* #'repl-read-form-fun)
-
-(defmacro with-new-repl-state ((&rest vars) &body forms)
-  (let ((gvars (mapcar (lambda (var) (gensym (symbol-name var))) vars)))
-    `(let (,@(mapcar (lambda (var gvar) `(,gvar ,var)) vars gvars))
-      (lambda (noprint)
-        (let ((*noprint* noprint))
-          (let (,@(mapcar (lambda (var gvar) `(,var ,gvar)) vars gvars))
-            (unwind-protect
-                 (progn ,@forms)
-              ,@(mapcar (lambda (var gvar) `(setf ,gvar ,var))
-                        vars gvars))))))))
-
-(defun make-repl-fun ()
-  (with-new-repl-state (*break-level* *inspect-break* *continuable-break*
-                        *dir-stack* *command-char* *prompt*
-                        *use-short-package-name* *max-history* *exit-on-eof*
-                        *history* *cmd-number*)
-    (repl :noprint noprint :break-level 0)))
-
-(when (boundp 'sb-impl::*repl-fun-generator*)
-  (setq sb-impl::*repl-fun-generator* #'make-repl-fun))
+(defun repl (&key noprint)
+  (let ((*standard-input* *terminal-io*)
+	(*standard-output* *terminal-io*))
+    (rebinding
+        (*break-level* *inspect-break* *continuable-break*
+		       *dir-stack* *command-char* *prompt*
+		       *use-short-package-name* *max-history* *exit-on-eof*
+		       *history* *cmd-number*)
+     (let ((*noprint* noprint))
+       (%repl :noprint noprint :break-level 0)))))

@@ -2,6 +2,8 @@
 
 (defsystem :prepl
   :serial t
-  ;; add new files to this list:
-  :components ((:file "package") (:file "prepl"))
-  :depends-on (#+nil :cl-ppcre))
+  :components ((:file "package")
+	       (:file "toplevel")
+	       (:file "repl")
+	       (:file "inspect"))
+  :depends-on (:closer-mop :iterate :bordeaux-threads :trivial-backtrace))
