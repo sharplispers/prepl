@@ -803,6 +803,10 @@
   `(let (,@(mapcar (lambda (var) `(,var ,var)) vars))
      ,@body))
 
+(defmacro session-workaround-if-on-sbcl (&rest forms)
+  #+sbcl `(sb-thread:with-new-session () ,@forms)
+  #-sbcl `(progn ,@forms))
+
 (defun repl (&rest args &key break-level noprint inspect continuable)
   (declare (ignore break-level noprint inspect continuable))
   (rebinding
@@ -810,4 +814,4 @@
 		     *dir-stack* *command-char* *prompt*
 		     *use-short-package-name* *max-history* *exit-on-eof*
 		     *history* *cmd-number*)
-    (apply #'%repl args)))
+    (session-workaround-if-on-sbcl (apply #'%repl args))))

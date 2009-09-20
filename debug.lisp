@@ -1,10 +1,6 @@
 ;;;; Debugger for prepl
-;;;;
-;;;; The documentation, which may or may not apply in its entirety at
-;;;; any given time, for this functionality is on the ACL website:
-;;;;   <http://www.franz.com/support/documentation/6.2/doc/top-level.htm>.
 
-(cl:in-package :prepl)
+(in-package :prepl)
 
 ;;; FIXME: These declaims violate package locks. Are they needed at
 ;;; all? Seems not.

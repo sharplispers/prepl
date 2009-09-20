@@ -1,13 +1,6 @@
 ;;;; Inspector for prepl
-;;;;
-;;;; The documentation, which may or may not apply in its entirety at
-;;;; any given time, for this functionality is on the ACL website:
-;;;;   <http://www.franz.com/support/documentation/6.2/doc/inspector.htm>.
-;;;;
-;;;; A summary of inspector navigation is contained in the below *INSPECT-HELP*
-;;;; variable.
 
-(cl:in-package #:prepl)
+(in-package :prepl)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defconstant +default-inspect-length+ 20))
@@ -670,7 +663,7 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
   (format nil "ratio ~W" object))
 
 (defmethod inspected-description ((object character))
-  (format nil "character ~W char-code #x~4,'0X" object))
+  (format nil "character ~W char-code #x~4,'0X" object (char-code object)))
 
 (defmethod inspected-description ((object t))
   (format nil "a generic object ~W" object))

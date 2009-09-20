@@ -3,7 +3,7 @@
 (defsystem :prepl
   :serial t
   :components ((:file "package")
-	       (:file "toplevel")
-	       (:file "repl")
+	       (:file "prepl")
+	       (:file "commands")
 	       (:file "inspect"))
   :depends-on (:closer-mop :iterate :bordeaux-threads :trivial-backtrace))
