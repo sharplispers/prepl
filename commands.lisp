@@ -585,6 +585,24 @@
 
 ;;;; dispatch table for commands
 
+(defmacro define-repl-command
+    (name-and-options (&rest args) &body docstring-and-forms)
+  (destructuring-bind (name &key parsing abbr-len aliases)
+      (if (listp name-and-options) name-and-options (list name-and-options))
+    (let ((docstring (when (stringp (car docstring-and-forms))
+		       (car docstring-and-forms)))
+	  (cmd-name (intern (format nil "~A-CMD" (symbol-name name))
+			    (symbol-package name))))
+      `(progn
+	 (defun ,cmd-name (,@args)
+	   ,@docstring-and-forms)
+	 ,@(iter (for alias in (cons (string-downcase name) aliases))
+		 (collect `(add-cmd-table-entry ',alias
+						',abbr-len
+						',cmd-name
+						',docstring
+						',parsing)))))))
+
 (let ((cmd-table
        '(("aliases" 3 alias-cmd "show aliases")
          ("apropos" 2 apropos-cmd "show apropos" :parsing :string)

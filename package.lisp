@@ -4,6 +4,7 @@
   (:use :cl :iterate)
   (:export "REPL"
 
+	   "DEFINE-REPL-COMMAND"
 	   "ALIAS"
 
 	   "*PROMPT*"
