@@ -3,7 +3,7 @@
 (defstruct user-command
   (input nil) ; input, maybe a string or form
   (func nil)  ; cmd func entered, overloaded
-              ; (:eof :null-command :cmd-error :history-error)
+              ; (:eof :null-command :cmd-error :cmd-ambiguous :history-error)
   (args nil)  ; args for cmd func
   (hnum nil)) ; history number
 
@@ -67,7 +67,7 @@
 			    ',parsing)))))))
 
 (defparameter *cmd-table-hash*
-  (make-hash-table :size 30 :test #'equal))
+  (make-hash-table :test #'equal))
 
 (defun prompt-package-name ()
   (if *use-short-package-name*
@@ -196,10 +196,13 @@
                 (loop as arg = (read string-stream nil eof)
                       until (eq arg eof)
                       collect arg))))))
-    (let ((cmd-entry (find-command cmd-string)))
+    (multiple-value-bind (cmd-entry all-matches)
+	(completing-find-command cmd-string)
       (unless cmd-entry
         (return-from process-command-text
-          (make-user-command :func :cmd-error :input cmd-string)))
+          (if all-matches
+	      (make-user-command :func :cmd-ambiguous :input all-matches)
+	      (make-user-command :func :cmd-error :input cmd-string))))
       (make-user-command :func (command-table-entry-func cmd-entry)
                      :input line
                      :args (parse-args (command-table-entry-parsing cmd-entry)
@@ -235,6 +238,21 @@
 
 (defun find-command (cmdstr)
   (gethash (string-downcase cmdstr) *cmd-table-hash*))
+
+(defun completing-find-command (cmdstr)
+  (or (find-command cmdstr)
+      (let ((matches
+	     (iter (for (name cmd) in-hashtable *cmd-table-hash*)
+		   (let ((mismatch (mismatch name cmdstr)))
+		     (when (eq mismatch (length cmdstr))
+		       (collect cmd))))))
+	(cond
+	  ((null matches)
+	   nil)
+	  ((cddr matches)
+	   (values nil (mapcar #'command-table-entry-name matches)))
+	  (t
+	   (car matches))))))
 
 (defun user-command= (c1 c2)
   "Returns T if two user commands are equal"
@@ -451,7 +469,7 @@
   "print this help"
   (cond
     (cmd
-     (let ((cmd-entry (find-command cmd)))
+     (let ((cmd-entry (completing-find-command cmd)))
        (if cmd-entry
            (format *output* "Documentation for ~A: ~A~%"
                    (command-table-entry-name cmd-entry)
@@ -811,6 +829,10 @@
          (format *output* "Unknown top-level command: ~s.~%"
                  (user-command-input user-command))
          (format *output* "Type `~Ahelp' for the list of commands.~%" *command-char*)
+         t)
+	((eq (user-command-func user-command) :cmd-ambiguous)
+         (format *output* "Ambiguous top-level command. Completions are:~{~%  ~A~}.~%"
+                 (user-command-input user-command))
          t)
         ((eq (user-command-func user-command) :history-error)
          (format *output* "Input numbered ~d is not on the history list~%"
