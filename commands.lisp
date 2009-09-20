@@ -939,6 +939,7 @@
 		     *dir-stack* *command-char* *prompt*
 		     *use-short-package-name* *max-history* *exit-on-eof*
 		     *history* *cmd-number*)
-    (let ((*debugger-hook* #'debugger)
-	  #+sbcl (sb-ext:*invoke-debugger-hook* #'debugger))
-      (session-workaround-if-on-sbcl (apply #'%repl args)))))
+      (conium:call-with-debugger-hook
+       #'debugger
+       (lambda ()
+	 (session-workaround-if-on-sbcl (apply #'%repl args))))))
