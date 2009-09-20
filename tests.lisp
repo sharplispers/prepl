@@ -1,3 +1,6 @@
+;;; This file was taken from SBCL's sb-aclrepl contrib, written by Keven
+;;; Rosenberg and available under SBCL's public domain status.
+
 ;; Tests for prepl
 
 (defpackage #:aclrepl-tests
