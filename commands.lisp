@@ -605,9 +605,10 @@
 
 (define-repl-command processes ()
   (dolist (thread (bordeaux-threads:all-threads))
-    (format *output* "~&~A" thread)
-    (when (eq thread (bordeaux-threads:current-thread))
-      (format *output* " [current listener]")))
+    (format *output* "~&~A~20T~:[dead~;alive~]~@[~20T[current thread]~]"
+	    (bordeaux-threads:thread-name thread)
+	    (bordeaux-threads:thread-alive-p thread)
+	    (eq thread (bordeaux-threads:current-thread))))
   (values))
 
 (define-repl-command kill (&rest selected-threads)
