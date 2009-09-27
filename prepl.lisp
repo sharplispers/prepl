@@ -65,6 +65,11 @@
         (*break-level* break-level)
         (*inspect-break* inspect)
         (*continuable-break* continuable))
+    (unless nobanner
+      (format t "Welcome to Portable REPL running on ~A.~%"
+	      (lisp-implementation-type))
+      (format t "Type ~{~AHELP~^ or ~} for help.~%"
+	      (coerce *command-chars* 'list)))
     (iter
      (if *outmost-repl*
 	 (with-simple-restart (abort "Abort to REPL")
