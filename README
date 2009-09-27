@@ -17,7 +17,7 @@ Since then, it has been ported to Clozure CL and other Lisps.
 
 Debugging capabilities have been added.
 
-Overall, REPL does not have Allegro compatibility as a goal, although it
+Overall, PREPL does not have Allegro compatibility as a goal, although it
 still largely keeps its interface.
 
 
