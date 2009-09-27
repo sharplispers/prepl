@@ -56,10 +56,11 @@
 (defvar *outmost-repl* t)
 
 (defun %repl (&key
-             (break-level (1+ *break-level*))
-             (noprint *noprint*)
-             (inspect nil)
-             (continuable nil))
+	      (break-level (1+ *break-level*))
+	      (noprint *noprint*)
+	      (inspect nil)
+	      (continuable nil)
+	      (nobanner (or noprint (not *outmost-repl*))))
   (let ((*noprint* noprint)
         (*break-level* break-level)
         (*inspect-break* inspect)

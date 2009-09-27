@@ -59,8 +59,8 @@
   "when T, use the shortnest package nickname in a prompt")
 (defparameter *dir-stack* nil
   "The top-level directory stack")
-(defparameter *command-char* #\:
-  "Prefix character for a top-level command")
+(defparameter *command-chars* ":,"
+  "Prefix characters for a top-level command")
 (defvar *max-history* 100
   "Maximum number of history commands to remember")
 (defvar *exit-on-eof* t
@@ -113,7 +113,7 @@
   ;; Reads a command from the user and returns a user-command object
   (let* ((next-char (peek-char-non-whitespace input-stream))
          (cmd (cond
-                ((eql *command-char* next-char)
+                ((command-char-p next-char)
                  (dispatch-command-line input-stream))
                 ((eql #\newline next-char)
                  (read-char input-stream)
@@ -131,8 +131,11 @@
         (throw 'repl-catcher cmd)
         cmd)))
 
+(defun command-char-p (char)
+  (find char *command-chars*))
+
 (defun dispatch-command-line (input-stream)
-  "Processes an input line that starts with *command-char*"
+  "Processes an input line that starts with *command-chars*"
   (let* ((line (string-trim-whitespace (read-line input-stream)))
          (first-space-pos (position #\space line))
          (cmd-string (subseq line 1 first-space-pos))
@@ -149,7 +152,7 @@
            (char= (char cmd-string 0) #\+)
            (char= (char cmd-string 0) #\-))
        (process-command-numeric cmd-string cmd-args-string))
-      ((char= (char cmd-string 0) *command-char*)
+      ((command-char-p (char cmd-string 0))
        (process-history-search (subseq cmd-string 1) cmd-args-string))
       (t
        (process-command-text cmd-string line cmd-args-string)))))
@@ -530,7 +533,11 @@
                    (command-table-entry-name cmd-entry)
                    (command-table-entry-desc cmd-entry)))))
     (t
-     (format *output* "~11A ~4A ~A~%" "COMMAND" "ABBR" "DESCRIPTION")
+     (format *output* "Command characters are ~{'~A'~^ and ~}.~%"
+	     (coerce *command-chars* 'list))
+     (format *output* "Names can be abbreviated to any unique prefix.~%")
+     (format *output* "~%Full list of commands:~%~%")
+     (format *output* "~11A ~4A ~A~%" "COMMAND" "" "DESCRIPTION")
      (format *output* "~11A ~4A ~A~%" "<n>" ""
              "re-execute <n>th history command")
      (dolist (doc-entry (get-command-doc-list :cmd))
@@ -911,7 +918,7 @@
         ((eq (user-command-func user-command) :cmd-error)
          (format *output* "Unknown top-level command: ~s.~%"
                  (user-command-input user-command))
-         (format *output* "Type `~Ahelp' for the list of commands.~%" *command-char*)
+         (format *output* "Type `~Ahelp' for the list of commands.~%" (elt *command-chars* 0))
          t)
 	((eq (user-command-func user-command) :cmd-ambiguous)
          (format *output* "Ambiguous top-level command. Completions are:~{~%  ~A~}.~%"
@@ -955,11 +962,11 @@
     (show-restarts)
     (repl)))
 
-(defun repl (&rest args &key break-level noprint inspect continuable)
-  (declare (ignore break-level noprint inspect continuable))
+(defun repl (&rest args &key break-level noprint inspect continuable nobanner)
+  (declare (ignore break-level noprint inspect continuable nobanner))
   (rebinding
       (*break-level* *inspect-break* *continuable-break*
-		     *dir-stack* *command-char* *prompt*
+		     *dir-stack* *command-chars* *prompt*
 		     *use-short-package-name* *max-history* *exit-on-eof*
 		     *history* *cmd-number*)
       (conium:call-with-debugger-hook

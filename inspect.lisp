@@ -606,6 +606,7 @@ position with the label if the label is a string."
           (displace-array-p object)
           (length object)))
 
+#+nil					;not portably a class
 (defmethod inspected-description ((object simple-vector))
   (declare (simple-vector object))
   (format nil "a simple ~A vector (~D)"
@@ -667,28 +668,13 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
     (32 "~8,'0X")
     (t  "~X")))
 
-(defmethod inspected-description ((object double-float))
-  (format nil  "double-float ~W" object))
-
-(defmethod inspected-description ((object single-float))
-  (format nil "single-float ~W" object))
-
-(defmethod inspected-description ((object fixnum))
-  (format nil "fixnum ~W" object))
-
 (defmethod inspected-description ((object complex))
   (format nil "complex number ~W" object))
-
-(defmethod inspected-description ((object simple-string))
-  (format nil "a simple-string (~W) ~W" (length object) object))
 
 (defun n-word-bits ()
   (or #+sbcl sb-vm::n-word-bits
       ;; #+ccl ...
       64))
-
-(defmethod inspected-description ((object bignum))
-  (format nil  "bignum ~W; length ~D" object (integer-length object)))
 
 (defmethod inspected-description ((object ratio))
   (format nil "ratio ~W" object))
@@ -697,7 +683,13 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
   (format nil "character ~W char-code #x~4,'0X" object (char-code object)))
 
 (defmethod inspected-description ((object t))
-  (format nil "a generic object ~W" object))
+  (typecase object
+    (fixnum (format nil "fixnum ~W" object))
+    (double-float (format nil  "double-float ~W" object))
+    (single-float (format nil "single-float ~W" object))
+    (simple-string (format nil "a simple-string (~W) ~W" (length object) object))
+    (bignum (format nil  "bignum ~W; length ~D" object (integer-length object)))
+    (t (format nil "a generic object ~W" object))))
 
 (defmethod inspected-description ((object (eql *inspect-unbound-object-marker*)))
   "..unbound..")
@@ -855,11 +847,10 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
                         (cons "denominator" (denominator object)))))
     (list components (length components) :named nil)))
 
-(defmethod inspected-parts ((object bignum))
-    (list object (bignum-words object) :bignum nil))
-
 (defmethod inspected-parts ((object t))
-  (list nil 0 nil nil))
+  (typecase object
+    #+nil (bignum (list object (bignum-words object) :bignum nil))
+    (t (list nil 0 nil nil))))
 
 
 ;; FIXME - implement setting of component values
