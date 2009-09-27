@@ -6,4 +6,5 @@
 	       (:file "prepl")
 	       (:file "commands")
 	       (:file "inspect"))
-  :depends-on (:closer-mop :iterate :bordeaux-threads :conium))
+  :depends-on (:closer-mop :iterate :bordeaux-threads :conium
+			   :named-readtables))
