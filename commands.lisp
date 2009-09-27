@@ -393,6 +393,29 @@
      (setf cl:*package* (find-package (write-to-string pkg)))))
   (values))
 
+(defun readtable-name-for-repl (table)
+  ;; don't want :CURRENT as a readtable name
+  (let ((name (named-readtables:readtable-name table)))
+    (if (and name (not (eq name :current)))
+	name
+	*readtable*)))
+
+(define-repl-command readtable (&optional name)
+  "change current readtable"
+  (cond
+    (name
+     (let ((table (named-readtables:find-readtable name)))
+       (if table
+	   (prog1
+	       (setf *readtable* (named-readtables:find-readtable name))
+	     (format *output* "The ~A readtable is now current.~%"
+		     (readtable-name-for-repl *readtable*)))
+	   (format *output* "Unknown readtable: ~A.~%" name))))
+    (t
+     (format *output* "The ~A readtable is current.~%"
+	     (readtable-name-for-repl *readtable*))
+     *readtable*)))
+
 (defun string-to-list-skip-spaces (str)
   "Return a list of strings, delimited by spaces, skipping spaces."
   (declare (type (or null string) str))
