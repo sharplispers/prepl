@@ -360,11 +360,11 @@
 
 (defun quit (status)
   #+sbcl (sb-ext:quit :unix-status status)
-  #+ccl (ccl:quit status)
-  #-(or sbcl ccl) (error "Sorry, don't know how to quit on this Lisp."))
+  #+openmcl (ccl:quit status)
+  #-(or sbcl openmcl) (error "Sorry, don't know how to quit on this Lisp."))
 
 (define-repl-command exit (&optional (status 0))
-  "exit sbcl"
+  "exit lisp"
   (let ((other-threads (other-threads)))
     (when other-threads
       (format *output* "There exists the following processes~%")
