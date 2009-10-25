@@ -66,8 +66,9 @@
         (*inspect-break* inspect)
         (*continuable-break* continuable))
     (unless nobanner
-      (format t "Welcome to Portable REPL running on ~A.~%"
-	      (lisp-implementation-type))
+      (format t "~&Welcome to Portable REPL running on ~A, thread ~A.~%"
+	      (lisp-implementation-type)
+	      (bordeaux-threads:thread-name (bordeaux-threads:current-thread)))
       (format t "Type ~{~AHELP~^ or ~} for help.~%"
 	      (coerce *command-chars* 'list)))
     (iter
