@@ -134,6 +134,19 @@
 (defun command-char-p (char)
   (find char *command-chars*))
 
+(defvar *command-parser-hooks* nil)
+
+(defun dispatch-command-line-using-hook (cmd line cmd-args-string override)
+  (dolist (hook *command-parser-hooks*)
+    (multiple-value-bind (fun parsing) 
+        (funcall hook cmd override)
+      (when fun
+	(return
+	 (make-user-command :func fun
+			    :input line
+			    :args (parse-args parsing cmd-args-string)
+			    :hnum *cmd-number*))))))
+
 (defun dispatch-command-line (input-stream)
   "Processes an input line that starts with *command-chars*"
   (let* ((line (string-trim-whitespace (read-line input-stream)))
@@ -151,13 +164,13 @@
       ((or (numberp (read-from-string cmd-string))
            (char= (char cmd-string 0) #\+)
            (char= (char cmd-string 0) #\-))
-       (process-command-numeric cmd-string cmd-args-string))
+       (process-command/numeric cmd-string cmd-args-string))
       ((command-char-p (char cmd-string 0))
        (process-history-search (subseq cmd-string 1) cmd-args-string))
       (t
-       (process-command-text cmd-string line cmd-args-string)))))
+       (process-command/text cmd-string line cmd-args-string)))))
 
-(defun process-command-numeric (cmd-string cmd-args-string)
+(defun process-command/numeric (cmd-string cmd-args-string)
   "Process a numeric cmd, such as ':123'"
   (let* ((first-char (char cmd-string 0))
          (number-string (if (digit-char-p first-char)
@@ -170,7 +183,7 @@
                      raw-number))
          (cmd (get-history number)))
     (when (eq cmd *null-command*)
-      (return-from process-command-numeric
+      (return-from process-command/numeric
         (make-user-command :func :history-error :input (read-from-string
                                                     cmd-string))))
     (maybe-return-history-command cmd cmd-args-string)))
@@ -216,33 +229,41 @@
       (return-from process-history-search *null-command*))
     (maybe-return-history-command cmd cmd-args-string)))
 
+(defun parse-args (parsing args-string)
+  (case parsing
+    (:string
+     (if (zerop (length args-string))
+	 nil
+	 (list args-string)))
+    (t
+     (let ((string-stream (make-string-input-stream args-string))
+	   (eof (cons nil *eof-marker*))) ;new cons for eq uniqueness
+       (loop as arg = (read string-stream nil eof)
+	 until (eq arg eof)
+	 collect arg)))))
 
-(defun process-command-text (cmd-string line cmd-args-string)
+(defun process-command/text (cmd-string line cmd-args-string)
   "Process a text cmd, such as ':ld a b c'"
-  (flet ((parse-args (parsing args-string)
-           (case parsing
-             (:string
-              (if (zerop (length args-string))
-                  nil
-                  (list args-string)))
-             (t
-              (let ((string-stream (make-string-input-stream args-string))
-                    (eof (cons nil *eof-marker*))) ;new cons for eq uniqueness
-                (loop as arg = (read string-stream nil eof)
-                      until (eq arg eof)
-                      collect arg))))))
-    (multiple-value-bind (cmd-entry all-matches)
-	(completing-find-command cmd-string)
-      (unless cmd-entry
-        (return-from process-command-text
-          (if all-matches
-	      (make-user-command :func :cmd-ambiguous :input all-matches)
-	      (make-user-command :func :cmd-error :input cmd-string))))
-      (make-user-command :func (command-table-entry-func cmd-entry)
-                     :input line
-                     :args (parse-args (command-table-entry-parsing cmd-entry)
-                                       cmd-args-string)
-                     :hnum *cmd-number*))))
+  (multiple-value-bind (cmd-entry all-matches)
+      (completing-find-command cmd-string)
+    (unless cmd-entry
+      (return-from process-command/text
+        (if all-matches
+	    (make-user-command :func :cmd-ambiguous :input all-matches)
+	    (or (dispatch-command-line-using-hook
+		 cmd-string line cmd-args-string nil)
+		(make-user-command :func :cmd-error :input cmd-string)))))
+    (or (dispatch-command-line-using-hook
+	 (command-table-entry-name cmd-entry)
+	 line
+	 cmd-args-string
+	 (command-table-entry-parsing cmd-entry))
+	(make-user-command :func (command-table-entry-func cmd-entry)
+			   :input line
+			   :args (parse-args 
+				  (command-table-entry-parsing cmd-entry)
+				  cmd-args-string)
+			   :hnum *cmd-number*))))
 
 (defun make-cte (name-param func desc parsing group abbr-len)
   (let ((name (etypecase name-param

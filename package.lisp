@@ -36,4 +36,6 @@
 	   "*EXIT-ON-EOF*"
 	   "*MAX-HISTORY*"
 	   "*USE-SHORT-PACKAGE-NAME*"
-	   "*COMMAND-CHAR*"))
+	   "*COMMAND-CHAR*"
+
+	   "*COMMAND-PARSER-HOOKS*"))
