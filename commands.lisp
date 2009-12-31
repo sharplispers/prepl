@@ -626,6 +626,7 @@
   (values))
 
 (defvar *current-error* nil)
+(defvar *debugging-context* nil)
 
 (define-repl-command bt (&optional (n most-positive-fixnum))
   "backtrace `n' stack frames, default all"
@@ -992,12 +993,16 @@
 (defmacro session-workaround-if-on-sbcl (&rest forms)
   `(invoke-with-session-workaround-if-on-sbcl (lambda () ,@forms)))
 
-(defun debugger (condition hook)
+(defun debugger (condition hook &optional pre-repl-fun)
   (declare (ignore hook))
-  (let ((*current-error* condition))
+  (let ((*current-error* condition)
+	(*debugging-context* (gensym)))
     (format t "~&Debugger entered for condition: ~S:~%  ~:*~A~%" *current-error*)
     (show-restarts)
-    (repl)))
+    (conium:call-with-debugging-environment
+     (lambda ()
+       (when pre-repl-fun (funcall pre-repl-fun))
+       (repl)))))
 
 (defun repl (&rest args &key break-level noprint inspect continuable nobanner)
   (declare (ignore break-level noprint inspect continuable nobanner))
