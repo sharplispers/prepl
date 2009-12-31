@@ -132,20 +132,7 @@
         cmd)))
 
 (defun command-char-p (char)
-  (find char *command-chars*))
-
-(defvar *command-parser-hooks* nil)
-
-(defun dispatch-command-line-using-hook (cmd line cmd-args-string override)
-  (dolist (hook *command-parser-hooks*)
-    (multiple-value-bind (fun parsing) 
-        (funcall hook cmd override)
-      (when fun
-	(return
-	 (make-user-command :func fun
-			    :input line
-			    :args (parse-args parsing cmd-args-string)
-			    :hnum *cmd-number*))))))
+  (position char *command-chars*))
 
 (defun dispatch-command-line (input-stream)
   "Processes an input line that starts with *command-chars*"
@@ -168,7 +155,17 @@
       ((command-char-p (char cmd-string 0))
        (process-history-search (subseq cmd-string 1) cmd-args-string))
       (t
-       (process-command/text cmd-string line cmd-args-string)))))
+       (multiple-value-bind
+	   (override user-command full-name)
+	   (process-command/text cmd-string line cmd-args-string)
+	 (or (unless (or (eq override :override-not-allowed)
+			 (zerop (command-char-p (elt line 0))))
+	       (process-command/override (or full-name cmd-string) 
+					 line 
+					 cmd-args-string 
+					 override
+					 user-command))
+	     user-command))))))
 
 (defun process-command/numeric (cmd-string cmd-args-string)
   "Process a numeric cmd, such as ':123'"
@@ -249,21 +246,40 @@
     (unless cmd-entry
       (return-from process-command/text
         (if all-matches
-	    (make-user-command :func :cmd-ambiguous :input all-matches)
-	    (or (dispatch-command-line-using-hook
-		 cmd-string line cmd-args-string nil)
-		(make-user-command :func :cmd-error :input cmd-string)))))
-    (or (dispatch-command-line-using-hook
-	 (command-table-entry-name cmd-entry)
-	 line
-	 cmd-args-string
-	 (command-table-entry-parsing cmd-entry))
-	(make-user-command :func (command-table-entry-func cmd-entry)
-			   :input line
-			   :args (parse-args 
-				  (command-table-entry-parsing cmd-entry)
-				  cmd-args-string)
-			   :hnum *cmd-number*))))
+	    (values 
+	     :do-not-override
+	     (make-user-command :func :cmd-ambiguous :input all-matches))
+	    (values
+	     nil
+	     (make-user-command :func :cmd-error :input cmd-string)))))
+    (let ((parsing (command-table-entry-parsing cmd-entry)))
+      (values (or parsing t)
+	      (make-user-command :func (command-table-entry-func cmd-entry)
+				 :input line
+				 :args (parse-args parsing cmd-args-string)
+				 :hnum *cmd-number*)
+	      (command-table-entry-name cmd-entry)))))
+
+(defvar *next-command*)
+
+(defun call-next-command (&rest args)
+  (apply (or (user-command-func *next-command*)
+	     (error "no next command"))
+	 args ))
+
+(defun process-command/override 
+       (cmd line cmd-args-string override original-command)
+  (dolist (hook *command-parser-hooks*)
+    (multiple-value-bind (fun parsing) 
+        (funcall hook cmd override)
+      (when fun
+	(return
+	 (make-user-command :func (lambda (&rest args)
+				    (let ((*next-command* original-command))
+				      (apply fun args)))
+			    :input line
+			    :args (parse-args parsing cmd-args-string)
+			    :hnum *cmd-number*))))))
 
 (defun make-cte (name-param func desc parsing group abbr-len)
   (let ((name (etypecase name-param
