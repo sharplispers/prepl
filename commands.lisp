@@ -786,7 +786,9 @@
     (format *output* "~a~%" dir))
   (values))
 
-(define-repl-command (load-op :aliases ("make" "load-system")) (name)
+(define-repl-command (load-op :aliases ("make" "load-system")
+			      :parsing :string) 
+		     (name)
   "Load the specified ASDF system"
   (asdf:operate 'asdf:load-op name)
   (prin1 (asdf:find-system name)))
