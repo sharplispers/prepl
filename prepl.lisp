@@ -41,6 +41,7 @@
   "boolean: T if break caused by inspect")
 (defvar *continuable-break* nil
   "boolean: T if break caused by continuable error")
+(defvar *command-parser-hooks* nil)
 
 (defvar *unwind-hooks*
   (list #+sbcl #'sb-impl::disable-stepping))
@@ -69,7 +70,12 @@
       (format t "~&Welcome to Portable REPL running on ~A, thread ~A.~%"
 	      (lisp-implementation-type)
 	      (bordeaux-threads:thread-name (bordeaux-threads:current-thread)))
-      (format t "Type ~{~AHELP~^ or ~} for help.~%"
+      (when *command-parser-hooks*
+	(format t "~%   Hooks are enabled: ~{~S~^,~%   ~}~%" *command-parser-hooks*)
+	(format t "   Type ~{~Afoo~^ and ~} to use hooks.  ~Cfoo will by-pass hooks.~%~%"
+		(cdr (coerce *command-chars* 'list))
+		(elt *command-chars* 0)))
+      (format t "Type ~{~Ahelp~^ or ~} for help.~%"
 	      (coerce *command-chars* 'list)))
     (iter
      (if *outmost-repl*
