@@ -995,16 +995,23 @@
 (defmacro session-workaround-if-on-sbcl (&rest forms)
   `(invoke-with-session-workaround-if-on-sbcl (lambda () ,@forms)))
 
+(defvar *entering-prepl-debugger-hook* nil)
+
 (defun debugger (condition hook &optional pre-repl-fun)
   (declare (ignore hook))
   (let ((*current-error* condition)
 	(*debugging-context* (gensym)))
-    (format t "~&Debugger entered for condition: ~S:~%  ~:*~A~%" *current-error*)
-    (show-restarts)
-    (conium:call-with-debugging-environment
-     (lambda ()
-       (when pre-repl-fun (funcall pre-repl-fun))
-       (repl)))))
+    (flet ((cont ()
+	     (format t "~&Debugger entered for condition: ~S:~%  ~:*~A~%"
+		     *current-error*)
+	     (show-restarts)
+	     (conium:call-with-debugging-environment
+	      (lambda ()
+		(when pre-repl-fun (funcall pre-repl-fun))
+		(repl)))))
+      (if *entering-prepl-debugger-hook*
+	  (funcall *entering-prepl-debugger-hook* #'cont)
+	  (cont)))))
 
 (defun repl (&rest args &key break-level noprint inspect continuable nobanner)
   (declare (ignore break-level noprint inspect continuable nobanner))
@@ -1017,3 +1024,11 @@
        #'debugger
        (lambda ()
 	 (session-workaround-if-on-sbcl (apply #'%repl args))))))
+
+(defun global-prepl-debugger-hook (condition hook)
+  ;; (session-workaround-if-on-sbcl (lambda ()))
+  (debugger condition hook))
+
+(defun install-global-prepl-debugger-hook ()
+  (conium:install-debugger-globally #'global-prepl-debugger-hook))
+
