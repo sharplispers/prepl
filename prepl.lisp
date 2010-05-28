@@ -123,6 +123,8 @@
 	(and (eq reason :pop)
 	     (plusp *break-level*)))))
 
+(defvar *read-command* 'read-command)
+
 (defun %rep-one ()
   "Read-Eval-Print one form"
   ;; (See comment preceding the definition of SCRUB-CONTROL-STACK.)
@@ -132,7 +134,7 @@
     (force-output *standard-output*))
   (let* ((*input* *standard-input*)
 	 (*output* *standard-output*)
-	 (user-command (read-command *input*))
+	 (user-command (funcall *read-command* *input*))
 	 (level *break-level*))
     (unless (process-command user-command)
       (with-simple-restart (abort
