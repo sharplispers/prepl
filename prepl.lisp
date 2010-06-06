@@ -56,6 +56,12 @@
 
 (defvar *outmost-repl* t)
 
+(defun show-banner ()
+  (format t "~&Portable REPL on ~A, ~A.  Type ~Ahelp for help.~%"
+	  (lisp-implementation-type)
+	  (bordeaux-threads:thread-name (bordeaux-threads:current-thread))
+	  (elt *command-chars* 0)))
+
 (defun %repl (&key
 	      (break-level (1+ *break-level*))
 	      (noprint *noprint*)
@@ -67,16 +73,7 @@
         (*inspect-break* inspect)
         (*continuable-break* continuable))
     (unless nobanner
-      (format t "~&Welcome to Portable REPL running on ~A, thread ~A.~%"
-	      (lisp-implementation-type)
-	      (bordeaux-threads:thread-name (bordeaux-threads:current-thread)))
-      (when *command-parser-hooks*
-	(format t "~%   Hooks are enabled: ~{~S~^,~%   ~}~%" *command-parser-hooks*)
-	(format t "   Type ~{~Afoo~^ and ~} to use hooks.  ~Cfoo will by-pass hooks.~%~%"
-		(cdr (coerce *command-chars* 'list))
-		(elt *command-chars* 0)))
-      (format t "Type ~{~Ahelp~^ or ~} for help.~%"
-	      (coerce *command-chars* 'list)))
+      (show-banner))
     (iter
      (if *outmost-repl*
 	 (with-simple-restart (abort "Abort to REPL")
