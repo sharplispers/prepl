@@ -246,7 +246,7 @@
     (unless cmd-entry
       (return-from process-command/text
         (if all-matches
-	    (values 
+	    (values
 	     :do-not-override
 	     (make-user-command :func :cmd-ambiguous :input all-matches))
 	    (values
@@ -267,10 +267,10 @@
 	     (error "no next command"))
 	 args ))
 
-(defun process-command/override 
+(defun process-command/override
        (cmd line cmd-args-string override original-command)
   (dolist (hook *command-parser-hooks*)
-    (multiple-value-bind (fun parsing) 
+    (multiple-value-bind (fun parsing)
         (funcall hook cmd override)
       (when fun
 	(return
