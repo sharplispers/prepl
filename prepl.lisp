@@ -82,7 +82,9 @@
 	 (with-simple-restart (abort "Abort to REPL")
 	   (let ((*outmost-repl* nil))
 	     (until (rep-one))))
-	 (until (rep-one))))))
+	 (until (rep-one))))
+    (unless *outmost-repl*
+      (throw 'repl-catcher :no-reason))))
 
 (defun interactive-eval (form)
   "Evaluate FORM, returning whatever it returns and adjusting ***, **, *,

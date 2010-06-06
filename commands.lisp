@@ -949,8 +949,11 @@
   ;; Processes a user command. Returns t if the user-command was a top-level
   ;; command
   (cond ((eq user-command *eof-command*)
-         (when *exit-on-eof*
-           (quit 0))
+	 (cond
+	   ((plusp *break-level*)
+	    (throw 'repl-catcher (values :pop 1)))
+	   (*exit-on-eof*
+	    (quit 0)))
          (format *output* "EOF~%")
          t)
         ((eq user-command *null-command*)
