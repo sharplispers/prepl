@@ -398,6 +398,7 @@
 (defun quit (status)
   #+sbcl (sb-ext:quit :unix-status status)
   #+openmcl (ccl:quit status)
+  #+allegro (excl:exit status)
   #-(or sbcl openmcl) (error "Sorry, don't know how to quit on this Lisp."))
 
 (define-repl-command exit (&optional (status 0))
