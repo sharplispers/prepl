@@ -76,9 +76,10 @@
       (show-banner))
     (iter
      (if *outmost-repl*
-	 (with-simple-restart (abort "Abort to REPL")
-	   (let ((*outmost-repl* nil))
-	     (until (rep-one))))
+	 (with-simple-restart (abort-to-outmost-repl "Abort to outmost REPL")
+	   (with-simple-restart (abort "Abort to REPL")
+             (let ((*outmost-repl* nil))
+	       (until (rep-one)))))
 	 (until (rep-one))))
     (unless *outmost-repl*
       (throw 'repl-catcher :no-reason))))
