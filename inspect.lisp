@@ -795,8 +795,7 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
     (list components (length components) :named nil)))
 
 (defmethod inspected-parts ((object function))
-  (let* (#+sbcl (type (sb-kernel:widetag-of object))
-         #+sbcl (object (if (= type sb-vm:closure-header-widetag)
+  (let* (#+sbcl (object (if (sb-kernel:closurep object)
 			    (sb-kernel:%closure-fun object)
 			    object))
 	 (components (list
