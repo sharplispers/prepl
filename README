@@ -27,6 +27,8 @@ USAGE
 Manual startup: 
   (asdf:operate 'asdf:load-op 'prepl)
   (prepl:repl)
+Enable readline-style repl:
+  (prepl:repl :linedit t)
 
 
 SEE ALSO

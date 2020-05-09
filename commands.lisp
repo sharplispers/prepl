@@ -1017,7 +1017,7 @@
 	  (funcall *entering-prepl-debugger-hook* #'cont)
 	  (cont)))))
 
-(defun repl (&rest args &key break-level noprint inspect continuable nobanner)
+(defun repl (&rest args &key break-level noprint inspect continuable nobanner linedit)
   (declare (ignore break-level noprint inspect continuable nobanner))
   (rebinding
       (*break-level* *inspect-break* *continuable-break*

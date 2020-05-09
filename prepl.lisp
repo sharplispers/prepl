@@ -67,7 +67,8 @@
 	      (noprint *noprint*)
 	      (inspect nil)
 	      (continuable nil)
-	      (nobanner (or noprint (not *outmost-repl*))))
+	      (nobanner (or noprint (not *outmost-repl*)))
+        (linedit nil))
   (let ((*noprint* noprint)
         (*break-level* break-level)
         (*inspect-break* inspect)
@@ -79,8 +80,8 @@
 	 (with-simple-restart (abort-to-outmost-repl "Abort to outmost REPL")
 	   (with-simple-restart (abort "Abort to REPL")
              (let ((*outmost-repl* nil))
-	       (until (rep-one)))))
-	 (until (rep-one))))
+	       (until (rep-one :linedit linedit)))))
+	 (until (rep-one :linedit linedit))))
     (unless *outmost-repl*
       (throw 'repl-catcher :no-reason))))
 
@@ -111,11 +112,11 @@
 (defvar *after-prompt-hooks*
   (list #+sbcl #'sb-sys:scrub-control-stack))
 
-(defun rep-one ()
+(defun rep-one (&key linedit)
   (multiple-value-bind (reason reason-param)
       (catch 'repl-catcher
 	(unwind-protect
-	     (%rep-one)
+	     (%rep-one :linedit linedit)
 	  (run-hooks *unwind-hooks*)))
     (declare (ignore reason-param))
     (or (and (eq reason :inspect)
@@ -125,15 +126,17 @@
 
 (defvar *read-command* 'read-command)
 
-(defun %rep-one ()
+(defun %rep-one (&key linedit)
   "Read-Eval-Print one form"
   ;; (See comment preceding the definition of SCRUB-CONTROL-STACK.)
   (run-hooks *after-prompt-hooks*)
   (unless *noprint*
     (prompt *standard-output*)
     (force-output *standard-output*))
-  (let* ((*input* *standard-input*)
-	 (*output* *standard-output*)
+  (let* ((*input* (if linedit
+                     (make-string-input-stream (linedit:formedit :prompt "" :quiet t))
+                     *standard-input*))
+   (*output* *standard-output*)
 	 (user-command (funcall *read-command* *input*))
 	 (level *break-level*))
     (unless (process-command user-command)
