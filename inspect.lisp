@@ -762,7 +762,7 @@ cons cells and LIST-TYPE is :normal, :dotted, or :cyclic"
 
 (defun inspected-structure-parts (object)
   (let ((components-list '())
-        #+sbcl (info (sb-kernel:wrapper-info (sb-kernel:wrapper-of object))))
+        #+sbcl (info (sb-pcl::wrapper-info (sb-pcl::valid-wrapper-of object))))
     #+sbcl 
     (when (sb-kernel::defstruct-description-p info)
       (dolist (dd-slot (sb-kernel:dd-slots info) (nreverse components-list))
